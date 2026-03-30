@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:glassmorphism/glassmorphism.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/game_state_provider.dart';
-import '../widgets/uno_card_widget.dart';
+import '../widgets/animated_card_widget.dart';
+import '../widgets/game_table.dart';
+import '../widgets/player_info_card.dart';
 import '../../../core/models/card_model.dart';
 import '../../../core/services/rule_engine.dart';
 
@@ -30,34 +33,26 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final size = MediaQuery.of(context).size;
 
     return Scaffold(
-      body: Container(
-        width: size.width,
-        height: size.height,
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF1A1A2E),
-              const Color(0xFF16213E),
-              const Color(0xFF0F3460),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            children: [
-              // Top player area
-              _buildOpponentArea(gameState),
+      body: GameTable(
+        style: TableStyle.darkMatte,
+        child: SizedBox(
+          width: size.width,
+          height: size.height,
+          child: SafeArea(
+            child: Column(
+              children: [
+                // Top player area
+                _buildOpponentArea(gameState),
 
-              // Center play area
-              Expanded(
-                child: _buildPlayArea(gameState),
-              ),
+                // Center play area
+                Expanded(
+                  child: _buildPlayArea(gameState),
+                ),
 
-              // Current player's hand
-              _buildPlayerHand(gameState),
-            ],
+                // Current player's hand
+                _buildPlayerHand(gameState),
+              ],
+            ),
           ),
         ),
       ),
@@ -68,49 +63,19 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   Widget _buildOpponentArea(gameState) {
     final opponentId = gameState.playerIds.length > 1 ? gameState.playerIds[1] : null;
     final opponentHand = opponentId != null ? gameState.playerHands[opponentId] : null;
+    final isOpponentTurn = gameState.currentPlayerIndex == 1;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
-      child: GlassmorphicContainer(
-        width: double.infinity,
-        height: 100,
-        borderRadius: 20,
-        blur: 20,
-        alignment: Alignment.center,
-        border: 2,
-        linearGradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withOpacity(0.1),
-            Colors.white.withOpacity(0.05),
-          ],
-        ),
-        borderGradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withOpacity(0.5),
-            Colors.white.withOpacity(0.2),
-          ],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            const Icon(Icons.person, color: Colors.white70, size: 32),
-            const SizedBox(width: 12),
-            Text(
-              'Opponent: ${opponentHand?.length ?? 0} cards',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+      child: PlayerInfoCard(
+        playerName: 'Opponent',
+        cardCount: opponentHand?.length ?? 0,
+        isCurrentPlayer: isOpponentTurn,
       ),
-    );
+    )
+        .animate()
+        .fadeIn(duration: 500.ms)
+        .slideY(begin: -0.2, end: 0, duration: 500.ms);
   }
 
   /// Builds the center play area with discard pile and draw pile
@@ -146,21 +111,54 @@ class _GameScreenState extends ConsumerState<GameScreen> {
                 ),
               ),
             ),
-          ),
+          )
+              .animate(onPlay: (controller) => controller.repeat())
+              .shimmer(duration: 2000.ms, color: Colors.white.withOpacity(0.1))
+              .shake(hz: 0.5, curve: Curves.easeInOutCubic),
 
           const SizedBox(width: 40),
 
-          // Discard pile (top card)
+          // Discard pile (top card) with glow effect
           if (gameState.topCard != null)
-            UnoCardWidget(
-              card: gameState.topCard!,
-              width: 100,
-              height: 150,
-              isPlayable: false,
-            ),
+            Container(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: _getCardGlowColor(gameState.topCard!).withOpacity(0.6),
+                    blurRadius: 20,
+                    spreadRadius: 5,
+                  ),
+                ],
+              ),
+              child: InteractiveCardWidget(
+                card: gameState.topCard!,
+                width: 100,
+                height: 150,
+                isPlayable: false,
+              ),
+            )
+                .animate()
+                .fadeIn(duration: 300.ms)
+                .scale(begin: const Offset(0.8, 0.8), duration: 300.ms),
         ],
       ),
     );
+  }
+
+  Color _getCardGlowColor(UnoCard card) {
+    switch (card.color) {
+      case UnoCardColor.red:
+        return const Color(0xFFE53935);
+      case UnoCardColor.blue:
+        return const Color(0xFF1E88E5);
+      case UnoCardColor.green:
+        return const Color(0xFF43A047);
+      case UnoCardColor.yellow:
+        return const Color(0xFFFDD835);
+      case UnoCardColor.wild:
+        return Colors.purple;
+    }
   }
 
   /// Builds the current player's hand at the bottom
@@ -189,14 +187,15 @@ class _GameScreenState extends ConsumerState<GameScreen> {
 
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
-            child: UnoCardWidget(
+            child: InteractiveCardWidget(
               card: card,
               isPlayable: isPlayable,
-              onTap: isPlayable
-                  ? () => _playCard(card)
-                  : null,
+              onTap: isPlayable ? () => _playCard(card) : null,
             ),
-          );
+          )
+              .animate(delay: (index * 50).ms)
+              .fadeIn(duration: 300.ms)
+              .slideY(begin: 0.3, end: 0, duration: 400.ms, curve: Curves.easeOutCubic);
         },
       ),
     );
