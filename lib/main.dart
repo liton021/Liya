@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'features/game/screens/game_screen.dart';
+import 'features/menu/screens/menu_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -48,7 +48,7 @@ class UnoLuxeApp extends StatelessWidget {
         ),
         fontFamily: 'SF Pro Display',
       ),
-      home: const GameScreen(),
+      home: const MenuScreen(),
     );
   }
 }

@@ -1,8 +1,10 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/card_model.dart';
 import '../../../core/models/game_state.dart';
+import '../../../core/models/player_model.dart';
 import '../../../core/services/deck_manager.dart';
 import '../../../core/services/rule_engine.dart';
+import '../../../core/services/ai_player.dart';
 
 /// Provider for the game state
 /// 
@@ -16,14 +18,32 @@ class GameStateNotifier extends StateNotifier<GameState> {
   GameStateNotifier() : super(GameState.initial());
 
   final DeckManager _deckManager = DeckManager();
+  final Map<String, AIPlayer> _aiPlayers = {};
+  final Map<String, Player> _players = {};
 
-  /// Initializes a new game with the specified number of players
+  /// Initializes a new game with the specified players
   /// 
-  /// [playerIds] List of player IDs (2-4 players)
-  void initializeGame(List<String> playerIds) {
-    if (playerIds.length < 2 || playerIds.length > 4) {
+  /// [players] List of Player objects (can be human or AI)
+  void initializeGame(List<Player> players) {
+    if (players.length < 2 || players.length > 4) {
       throw ArgumentError('Game requires 2-4 players');
     }
+
+    // Store players and create AI instances
+    _players.clear();
+    _aiPlayers.clear();
+    
+    for (final player in players) {
+      _players[player.id] = player;
+      if (player.isAI) {
+        _aiPlayers[player.id] = AIPlayer(
+          playerId: player.id,
+          difficulty: AIDifficulty.medium,
+        );
+      }
+    }
+
+    final playerIds = players.map((p) => p.id).toList();
 
     // Generate and shuffle deck
     final deck = _deckManager.getShuffledDeck();
@@ -60,6 +80,9 @@ class GameStateNotifier extends StateNotifier<GameState> {
       currentPlayerIndex: 0,
       status: GameStatus.playing,
     );
+
+    // If first player is AI, trigger AI move
+    _checkAndTriggerAIMove();
   }
 
   /// Plays a card from the current player's hand
@@ -119,6 +142,9 @@ class GameStateNotifier extends StateNotifier<GameState> {
 
     // Move to next player
     state = _moveToNextPlayer(newState, skipNext: RuleEngine.shouldSkipTurn(card));
+    
+    // Check if next player is AI
+    _checkAndTriggerAIMove();
   }
 
   /// Draws a card for the current player
@@ -140,6 +166,9 @@ class GameStateNotifier extends StateNotifier<GameState> {
       drawPile: updatedDrawPile,
       playerHands: updatedHands,
     );
+    
+    // Check if current player is AI after drawing
+    _checkAndTriggerAIMove();
   }
 
   /// Draws multiple cards (for penalties)
@@ -148,6 +177,7 @@ class GameStateNotifier extends StateNotifier<GameState> {
       drawCard();
     }
     state = _moveToNextPlayer(state);
+    _checkAndTriggerAIMove();
   }
 
   /// Moves to the next player
@@ -191,5 +221,76 @@ class GameStateNotifier extends StateNotifier<GameState> {
   /// Passes turn to next player
   void passTurn() {
     state = _moveToNextPlayer(state);
+    _checkAndTriggerAIMove();
   }
+
+  /// Checks if current player is AI and triggers their move
+  void _checkAndTriggerAIMove() async {
+    if (state.status != GameStatus.playing) return;
+    
+    final currentPlayer = _players[state.currentPlayerId];
+    if (currentPlayer?.isAI != true) return;
+
+    final aiPlayer = _aiPlayers[state.currentPlayerId];
+    if (aiPlayer == null) return;
+
+    // Add realistic delay
+    await Future.delayed(Duration(milliseconds: aiPlayer.getMoveDelay()));
+
+    // Check if game state is still valid
+    if (state.status != GameStatus.playing) return;
+    if (state.topCard == null) return;
+
+    final currentHand = state.currentPlayerHand;
+    
+    // AI selects card to play
+    final cardToPlay = aiPlayer.selectCardToPlay(
+      currentHand,
+      state.topCard!,
+      declaredColor: state.declaredColor,
+    );
+
+    if (cardToPlay != null) {
+      // AI plays the card
+      UnoCardColor? declaredColor;
+      if (cardToPlay.isWildCard) {
+        declaredColor = aiPlayer.selectColorForWildCard(currentHand);
+      }
+      playCard(cardToPlay, declaredColor: declaredColor);
+    } else {
+      // AI must draw a card
+      drawCard();
+      
+      // After drawing, check if AI can play the drawn card
+      await Future.delayed(const Duration(milliseconds: 500));
+      
+      if (state.status != GameStatus.playing) return;
+      
+      final updatedHand = state.currentPlayerHand;
+      if (updatedHand.isNotEmpty) {
+        final drawnCard = updatedHand.last;
+        if (state.topCard != null &&
+            RuleEngine.canPlayCard(
+              drawnCard,
+              state.topCard!,
+              declaredColor: state.declaredColor,
+            )) {
+          // AI can play the drawn card
+          await Future.delayed(const Duration(milliseconds: 300));
+          UnoCardColor? declaredColor;
+          if (drawnCard.isWildCard) {
+            declaredColor = aiPlayer.selectColorForWildCard(updatedHand);
+          }
+          playCard(drawnCard, declaredColor: declaredColor);
+          return;
+        }
+      }
+      
+      // AI cannot play, pass turn
+      passTurn();
+    }
+  }
+
+  /// Gets player by ID
+  Player? getPlayer(String playerId) => _players[playerId];
 }

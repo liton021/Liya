@@ -7,6 +7,7 @@ import '../widgets/animated_card_widget.dart';
 import '../widgets/game_table.dart';
 import '../widgets/player_info_card.dart';
 import '../../../core/models/card_model.dart';
+import '../../../core/models/player_model.dart';
 import '../../../core/services/rule_engine.dart';
 
 /// Main game screen with premium Apple-inspired design
@@ -21,9 +22,13 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize game with 2 players for now
+    // Initialize game with 1 human and 1 AI player
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(gameStateProvider.notifier).initializeGame(['player1', 'player2']);
+      final players = [
+        Player.human(id: 'player1', name: 'You'),
+        Player.ai(id: 'ai1', name: 'AI Opponent'),
+      ];
+      ref.read(gameStateProvider.notifier).initializeGame(players);
     });
   }
 
@@ -64,11 +69,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     final opponentId = gameState.playerIds.length > 1 ? gameState.playerIds[1] : null;
     final opponentHand = opponentId != null ? gameState.playerHands[opponentId] : null;
     final isOpponentTurn = gameState.currentPlayerIndex == 1;
+    final opponent = opponentId != null 
+        ? ref.read(gameStateProvider.notifier).getPlayer(opponentId)
+        : null;
 
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: PlayerInfoCard(
-        playerName: 'Opponent',
+        playerName: opponent?.name ?? 'Opponent',
         cardCount: opponentHand?.length ?? 0,
         isCurrentPlayer: isOpponentTurn,
       ),
