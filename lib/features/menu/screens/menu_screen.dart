@@ -65,11 +65,11 @@ class _MenuScreenState extends State<MenuScreen>
           SafeArea(
             child: Column(
               children: [
-                const Spacer(),
+                const Spacer(flex: 3),
                 _buildLogo(),
-                const Spacer(),
+                const Spacer(flex: 2),
                 _buildButtons(),
-                const SizedBox(height: 40),
+                const SizedBox(height: 60),
               ],
             ),
           ),
@@ -101,6 +101,7 @@ class _MenuScreenState extends State<MenuScreen>
               color: Colors.white,
               letterSpacing: 6,
               height: 1.0,
+              decoration: TextDecoration.none,
               shadows: [
                 Shadow(
                   color: Colors.black87,
@@ -127,6 +128,7 @@ class _MenuScreenState extends State<MenuScreen>
               color: Colors.white,
               letterSpacing: 2,
               height: 1.0,
+              decoration: TextDecoration.none,
             ),
           ),
         ),
@@ -155,8 +157,8 @@ class _MenuScreenState extends State<MenuScreen>
 
   Widget _buildButtons() {
     final buttons = [
-      ('SINGLE PLAYER', Icons.person, () => _startSinglePlayer(context), false),
-      ('MULTIPLAYER (COMING SOON)', Icons.people, () {}, true),
+      ('SINGLE PLAYER', Icons.person, () => _showAiCountDialog(context), false),
+      ('MULTIPLAYER', Icons.people, () {}, true),
     ];
     return Column(
       children: buttons.asMap().entries.map((entry) {
@@ -178,10 +180,125 @@ class _MenuScreenState extends State<MenuScreen>
     );
   }
 
-  void _startSinglePlayer(BuildContext context) {
+  void _showAiCountDialog(BuildContext context) {
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 32),
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: const Color(0xFF1A1200).withOpacity(0.95),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFB8860B), width: 2),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.5),
+                  blurRadius: 20,
+                  spreadRadius: 5,
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'SELECT OPPONENTS',
+                    style: TextStyle(
+                      color: Color(0xFFEDD47A),
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2,
+                      decoration: TextDecoration.none, // Ensure NO underline
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      _aiOption(1),
+                      _aiOption(2),
+                      _aiOption(3),
+                    ],
+                  ),
+                  const SizedBox(height: 24),
+                  GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Text(
+                      'CLOSE',
+                      style: TextStyle(
+                        color: Colors.white.withOpacity(0.5),
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 1.5,
+                        decoration: TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ).animate().scale(duration: 300.ms, curve: Curves.easeOutBack).fadeIn();
+      },
+    );
+  }
+
+  Widget _aiOption(int count) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context);
+        _startSinglePlayer(context, count);
+      },
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF3D2B0A), Color(0xFF1A1200)],
+              ),
+              border: Border.all(color: const Color(0xFFB8860B).withOpacity(0.5)),
+            ),
+            child: Center(
+              child: Text(
+                '$count',
+                style: const TextStyle(
+                  color: Color(0xFFEDD47A),
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            count == 1 ? 'AI' : 'AIs',
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _startSinglePlayer(BuildContext context, int aiCount) {
     Navigator.of(context).push(
       PageRouteBuilder(
-        pageBuilder: (_, a, __) => const GameScreen(),
+        pageBuilder: (_, a, __) => GameScreen(aiCount: aiCount),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 500),
@@ -189,6 +306,7 @@ class _MenuScreenState extends State<MenuScreen>
     );
   }
 }
+
 
 // ────────────────────────────────────────────────────────────────────────────
 class _LuxeMenuButton extends StatefulWidget {

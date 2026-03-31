@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/models/card_model.dart';
 import '../../../core/models/game_state.dart';
@@ -5,6 +6,7 @@ import '../../../core/models/player_model.dart';
 import '../../../core/services/deck_manager.dart';
 import '../../../core/services/rule_engine.dart';
 import '../../../core/services/ai_player.dart';
+import '../../../core/services/audio_service.dart';
 
 /// Provider for the game state
 /// 
@@ -20,6 +22,7 @@ class GameStateNotifier extends StateNotifier<GameState> {
   final DeckManager _deckManager = DeckManager();
   final Map<String, AIPlayer> _aiPlayers = {};
   final Map<String, Player> _players = {};
+  Timer? _unoPenaltyTimer;
 
   /// Initializes a new game with the specified players
   /// 
@@ -106,31 +109,27 @@ class GameStateNotifier extends StateNotifier<GameState> {
     // Remove card from hand
     currentHand.remove(card);
 
+    final String playerWhoPlayed = state.currentPlayerId;
+
     // Update player's hand
     final updatedHands = Map<String, List<UnoCard>>.from(state.playerHands);
-    updatedHands[state.currentPlayerId] = currentHand;
+    updatedHands[playerWhoPlayed] = currentHand;
 
     // Add card to discard pile
     final updatedDiscard = List<UnoCard>.from(state.discardPile)..add(card);
 
-    // Check for win-without-UNO penalty
-    final bool hasNotDeclared = !state.unoDeclaredPlayers.contains(state.currentPlayerId);
-    if (currentHand.isEmpty && hasNotDeclared) {
-      // Penalty: Draw 1 card and move turn
-      // Instead of updating hands with empty list, we'll draw for them now
-      _drawSingleCard(); 
-      // Re-get the hand because _drawSingleCard updated it
-      final handAfterPenalty = state.playerHands[state.currentPlayerId] ?? [];
-      
-      // Update state to include the played card but with the new penalty card in hand
-      state = state.copyWith(
-        discardPile: updatedDiscard,
-      );
-
-      // Move turn and end logic here
-      state = _moveToNextPlayer(state);
-      _checkAndTriggerAIMove();
-      return;
+    // [MODIFIED] 5-second UNO penalty timer logic
+    if (currentHand.length == 1) {
+      final player = _players[playerWhoPlayed];
+      if (player != null && !player.isAI) {
+        _unoPenaltyTimer?.cancel();
+        _unoPenaltyTimer = Timer(const Duration(seconds: 5), () {
+          final currentUnoSet = state.unoDeclaredPlayers;
+          if (!currentUnoSet.contains(playerWhoPlayed)) {
+            _applyUnoPenalty(playerWhoPlayed);
+          }
+        });
+      }
     }
 
     // Check for standard win
@@ -188,11 +187,62 @@ class GameStateNotifier extends StateNotifier<GameState> {
     } else if (!state.hasDrawnThisTurn) {
       _drawSingleCard();
       state = state.copyWith(hasDrawnThisTurn: true);
+      
+      // [NEW] Smart Pass Check: If drawn card isn't playable, auto-pass
+      final player = _players[state.currentPlayerId];
+      if (player != null && !player.isAI) {
+        final hand = state.currentPlayerHand;
+        if (hand.isNotEmpty) {
+          final drawnCard = hand.last;
+          final isPlayable = RuleEngine.canPlayCard(
+            drawnCard, 
+            state.topCard!,
+            declaredColor: state.declaredColor,
+            hasActiveStack: state.hasActiveStack,
+            stackCardType: state.stackCardType,
+            hand: hand,
+          );
+          
+          if (!isPlayable) {
+            // Auto-pass after a short delay for UX
+            Future.delayed(const Duration(milliseconds: 800), () {
+              if (state.hasDrawnThisTurn) passTurn();
+            });
+          }
+        }
+      }
     }
+  }
+
+  void _applyUnoPenalty(String playerId) {
+    // [NEW] Play penalty sound for the 2-card draw
+    AudioService.instance.playPenaltySound(2);
+
+    // Standard rule: draw 2 cards penalty for not saying UNO
+    final currentHand = List<UnoCard>.from(state.playerHands[playerId] ?? []);
+    
+    // Draw 2 cards manually to avoid moving turn
+    for (int i = 0; i < 2; i++) {
+        if (state.drawPile.isEmpty) _reshuffleDiscardPile();
+        if (state.drawPile.isEmpty) break;
+        
+        final drawnCard = state.drawPile.last;
+        state = state.copyWith(
+          drawPile: List<UnoCard>.from(state.drawPile)..removeLast(),
+        );
+        currentHand.add(drawnCard);
+    }
+    
+    final updatedHands = Map<String, List<UnoCard>>.from(state.playerHands);
+    updatedHands[playerId] = currentHand;
+    state = state.copyWith(playerHands: updatedHands);
   }
 
   /// Draws multiple cards (for penalties)
   void drawCards(int count) {
+    // Play the penalty sound if applicable
+    if (count >= 2) AudioService.instance.playPenaltySound(count);
+    
     for (int i = 0; i < count; i++) {
       _drawSingleCard();
     }
@@ -283,6 +333,10 @@ class GameStateNotifier extends StateNotifier<GameState> {
   /// Declares UNO for a player
   void declareUno(String playerId) {
     if (state.unoDeclaredPlayers.contains(playerId)) return;
+    
+    // [NEW] Cancel penalty timer if it exists
+    _unoPenaltyTimer?.cancel();
+    _unoPenaltyTimer = null;
     
     final updatedUno = Set<String>.from(state.unoDeclaredPlayers)..add(playerId);
     state = state.copyWith(unoDeclaredPlayers: updatedUno);

@@ -36,17 +36,6 @@ class RuleEngine {
       return false;
     }
 
-    // 2. Enforce official +4 Wild rule (can only play if no matching color in hand)
-    if (cardToPlay.value == UnoCardValue.wildDrawFour && hand != null) {
-      final colorToMatch = topCard.isWildCard ? declaredColor : topCard.color;
-      if (colorToMatch != null && colorToMatch != UnoCardColor.wild) {
-        final hasMatchingColor = hand.any((c) => c != cardToPlay && c.color == colorToMatch);
-        if (hasMatchingColor) {
-          return false;
-        }
-      }
-    }
-
     // 3. Normal Play
     // Wild cards can always be played
     if (cardToPlay.isWildCard) return true;

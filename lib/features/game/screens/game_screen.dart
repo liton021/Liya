@@ -6,14 +6,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/game_state_provider.dart';
 import '../widgets/game_table.dart';
 import '../widgets/uno_card_widget.dart';
+import '../widgets/uno_card_back.dart';
 import '../../../core/models/card_model.dart';
 import '../../../core/models/game_state.dart';
 import '../../../core/models/player_model.dart';
 import '../../../core/services/rule_engine.dart';
+import '../../../core/services/audio_service.dart';
 
 /// Main game screen – premium UNO Luxe design matching the reference
 class GameScreen extends ConsumerStatefulWidget {
-  const GameScreen({super.key});
+  final int aiCount;
+  const GameScreen({super.key, this.aiCount = 1});
   @override
   ConsumerState<GameScreen> createState() => _GameScreenState();
 }
@@ -22,6 +25,24 @@ class _GameScreenState extends ConsumerState<GameScreen>
     with TickerProviderStateMixin {
   late AnimationController _unoGlowCtrl;
   bool _unoDeclared = false;
+  
+  // Power Indicator state
+  bool _showPowerIndicator = false;
+  String _powerSymbol = '';
+  String _powerLabel = '';
+  
+  // Animation Keys
+  final GlobalKey _drawPileKey = GlobalKey();
+  final GlobalKey _discardPileKey = GlobalKey();
+  final GlobalKey _playerHandKey = GlobalKey();
+  final Map<String, GlobalKey> _aiHandKeys = {
+    'ai1': GlobalKey(),
+    'ai2': GlobalKey(),
+    'ai3': GlobalKey(),
+  };
+
+  // Active flying cards
+  final List<_FlyingCardData> _flyingCards = [];
 
   @override
   void initState() {
@@ -32,10 +53,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
     )..repeat(reverse: true);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final players = [
+      final List<Player> players = [
         Player.human(id: 'player1', name: 'You'),
-        Player.ai(id: 'ai1', name: 'AI Opponent'),
       ];
+      for (int i = 1; i <= widget.aiCount; i++) {
+        players.add(Player.ai(id: 'ai$i', name: 'AI $i'));
+      }
       ref.read(gameStateProvider.notifier).initializeGame(players);
     });
   }
@@ -51,6 +74,56 @@ class _GameScreenState extends ConsumerState<GameScreen>
     final gameState = ref.watch(gameStateProvider);
     final size = MediaQuery.of(context).size;
 
+    // ── AI Animation Listeners ──────────────────────────────────────────────
+    ref.listen(gameStateProvider, (previous, next) {
+      if (previous == null) return;
+      
+      // Detect Power Card Play
+      final prevTop = previous.topCard;
+      final nextTop = next.topCard;
+      
+      if (nextTop != null && (prevTop == null || nextTop != prevTop)) {
+        if (nextTop.value != UnoCardValue.zero && 
+            nextTop.value != UnoCardValue.one &&
+            nextTop.value != UnoCardValue.two &&
+            nextTop.value != UnoCardValue.three &&
+            nextTop.value != UnoCardValue.four &&
+            nextTop.value != UnoCardValue.five &&
+            nextTop.value != UnoCardValue.six &&
+            nextTop.value != UnoCardValue.seven &&
+            nextTop.value != UnoCardValue.eight &&
+            nextTop.value != UnoCardValue.nine) {
+          
+          setState(() {
+            _powerSymbol = _getSymbolText(nextTop.value);
+            _powerLabel = _getLabelText(nextTop.value, next.isClockwise);
+            _showPowerIndicator = true;
+          });
+          
+          Future.delayed(const Duration(milliseconds: 1600), () {
+            if (mounted) setState(() => _showPowerIndicator = false);
+          });
+        }
+      }
+
+      // Detect AI moves for all AIs
+      for (int i = 1; i <= widget.aiCount; i++) {
+        final aiId = 'ai$i';
+        final prevAiHand = (previous.playerHands[aiId] ?? []).length;
+        final nextAiHand = (next.playerHands[aiId] ?? []).length;
+        
+        if (nextAiHand < prevAiHand && previous.currentPlayerId == aiId) {
+          _triggerPlayAnimation(next.topCard, playerId: aiId);
+        }
+        
+        if (nextAiHand > prevAiHand && next.currentPlayerId == aiId) {
+          _triggerDrawAnimation(playerId: aiId);
+        }
+      }
+    });
+
+    final scale = gameState.playerIds.length > 2 ? 0.82 : 1.0;
+
     return Scaffold(
       body: GameTable(
         child: SizedBox(
@@ -62,15 +135,27 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 Column(
                   children: [
                     _buildTopBar(gameState, size),
-                    _buildOpponentArea(gameState, size),
-                    Expanded(child: _buildCenterArea(gameState, size)),
-                    _buildPlayerHand(gameState, size),
+                    Expanded(
+                      child: Stack(
+                        children: [
+                          // Center table logic
+                          Center(child: _buildCenterArea(gameState, size, scale)),
+                          
+                          // AI Players positioning
+                          ..._buildAIPositions(gameState, size, scale),
+                        ],
+                      ),
+                    ),
+                    _buildPlayerHand(gameState, size, scale),
                     _buildBottomBar(gameState, size),
                   ],
                 ),
                 // Victory overlay
                 if (gameState.status == GameStatus.finished)
                   _buildVictoryOverlay(gameState),
+                
+                // ── Animation Layer ──────────────────────────────────────────
+                ..._flyingCards.map((data) => _buildFlyingCard(data)),
               ],
             ),
           ),
@@ -81,21 +166,9 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   // ── Top settings / coins bar ──────────────────────────────────────────────
   Widget _buildTopBar(dynamic gameState, Size size) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Center(
-        child: AnimatedBuilder(
-          animation: _unoGlowCtrl,
-          builder: (_, __) => Icon(
-            gameState.isClockwise
-                ? Icons.rotate_right
-                : Icons.rotate_left,
-            color:
-                Colors.white.withOpacity(0.4 + _unoGlowCtrl.value * 0.3),
-            size: 26,
-          ),
-        ),
-      ),
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: SizedBox(height: 26),
     );
   }
 
@@ -116,65 +189,87 @@ class _GameScreenState extends ConsumerState<GameScreen>
     );
   }
 
-  // ── Opponent area (top) ───────────────────────────────────────────────────
-  Widget _buildOpponentArea(dynamic gameState, Size size) {
-    final opponentId =
-        gameState.playerIds.length > 1 ? gameState.playerIds[1] : null;
-    final opponentHand =
-        opponentId != null ? gameState.playerHands[opponentId] as List<UnoCard>? : null;
-    final isAiTurn = gameState.currentPlayerId == 'ai1';
-    final opponent = opponentId != null
-        ? ref.read(gameStateProvider.notifier).getPlayer(opponentId)
-        : null;
+  List<Widget> _buildAIPositions(dynamic gameState, Size size, double scale) {
+    final List<Widget> positions = [];
+    final aiIds = gameState.playerIds.where((id) => id.startsWith('ai')).toList();
+    
+    if (aiIds.isEmpty) return positions;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-      child: Column(
-        children: [
-          // Avatar + name + card count
-          _buildPlayerAvatar(
-            name: opponent?.name ?? 'AI',
-            cardCount: opponentHand?.length ?? 0,
-            isActive: isAiTurn,
-            isTop: true,
-          ),
-          const SizedBox(height: 6),
-          // AI thinking indicator
-          if (isAiTurn)
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 5),
-              decoration: BoxDecoration(
-                color: Colors.black38,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                    color: const Color(0xFFFFD700).withOpacity(0.4)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 12,
-                    height: 12,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 1.8,
-                        color: Color(0xFFFFD700)),
-                  ),
-                  SizedBox(width: 8),
-                  Text('Thinking...',
-                      style: TextStyle(
-                          color: Color(0xFFEDD47A),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.5)),
-                ],
-              ),
-            )
-                .animate(onPlay: (c) => c.repeat())
-                .shimmer(duration: 1200.ms, color: Colors.white24),
-        ],
-      ),
-    ).animate().fadeIn(duration: 400.ms).slideY(begin: -0.1, end: 0);
+    // Determine positions based on player count
+    if (aiIds.length == 1) {
+      // 1 AI: Top Center
+      positions.add(
+        Positioned(
+          top: 10,
+          left: 0,
+          right: 0,
+          child: _buildAiPlayerUI(aiIds[0], gameState, size, scale),
+        )
+      );
+    } else if (aiIds.length == 2) {
+      // 2 AIs: Top Left and Top Right
+      positions.add(
+        Positioned(
+          top: 10,
+          left: 20,
+          child: _buildAiPlayerUI(aiIds[0], gameState, size, scale * 0.9, isSide: true),
+        )
+      );
+      positions.add(
+        Positioned(
+          top: 10,
+          right: 20,
+          child: _buildAiPlayerUI(aiIds[1], gameState, size, scale * 0.9, isSide: true),
+        )
+      );
+    } else if (aiIds.length == 3) {
+      // 3 AIs: Left, Top, Right
+      positions.add(
+        Positioned(
+          top: size.height * 0.2,
+          left: 10,
+          child: _buildAiPlayerUI(aiIds[0], gameState, size, scale * 0.85, isVertical: true),
+        )
+      );
+      positions.add(
+        Positioned(
+          top: 10,
+          left: 0,
+          right: 0,
+          child: _buildAiPlayerUI(aiIds[1], gameState, size, scale * 0.85),
+        )
+      );
+      positions.add(
+        Positioned(
+          top: size.height * 0.2,
+          right: 10,
+          child: _buildAiPlayerUI(aiIds[2], gameState, size, scale * 0.85, isVertical: true),
+        )
+      );
+    }
+
+    return positions;
+  }
+
+  Widget _buildAiPlayerUI(String aiId, dynamic gameState, Size size, double scale, {bool isSide = false, bool isVertical = false}) {
+    final aiHand = gameState.playerHands[aiId] as List<UnoCard>?;
+    final isActive = gameState.currentPlayerId == aiId;
+    final cardCount = aiHand?.length ?? 0;
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _buildPlayerAvatar(
+          name: 'AI ${aiId.substring(2)}',
+          cardCount: cardCount,
+          isActive: isActive,
+          isTop: true,
+          scale: scale,
+        ),
+        const SizedBox(height: 8),
+        _buildAiHand(cardCount, size, key: _aiHandKeys[aiId]!, scale: scale, isVertical: isVertical),
+      ],
+    ).animate().fadeIn(duration: 400.ms);
   }
 
   Widget _buildPlayerAvatar({
@@ -182,154 +277,288 @@ class _GameScreenState extends ConsumerState<GameScreen>
     required int cardCount,
     required bool isActive,
     bool isTop = false,
+    double scale = 1.0,
   }) {
-    return Column(
-      children: [
-        AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          width: 54,
-          height: 54,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const LinearGradient(
-              colors: [Color(0xFF9E9E9E), Color(0xFF616161)],
-            ),
-            border: Border.all(
-              color: isActive
-                  ? const Color(0xFFFFD700)
-                  : Colors.white.withOpacity(0.25),
-              width: isActive ? 3 : 1.5,
-            ),
-            boxShadow: isActive
-                ? [
-                    BoxShadow(
-                      color: const Color(0xFFFFD700).withOpacity(0.5),
-                      blurRadius: 16,
-                      spreadRadius: 2,
-                    )
-                  ]
-                : [],
-          ),
-          child: const Icon(Icons.person, color: Colors.white, size: 28),
-        ),
-        const SizedBox(height: 4),
-        Text(name,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 12,
-                fontWeight: FontWeight.w600)),
-        Text('$cardCount cards',
-            style: TextStyle(
-                color: Colors.white.withOpacity(0.55), fontSize: 10)),
-      ],
-    );
-  }
-
-  // ── Center area: draw pile + discard pile ─────────────────────────────────
-  Widget _buildCenterArea(dynamic gameState, Size size) {
-    final isHumanTurn = gameState.currentPlayerId == 'player1';
-    final topCard = gameState.topCard as UnoCard?;
-    final humanHandCount = (gameState.playerHands['player1'] as List<UnoCard>? ?? []).length;
-
-    return Center(
+    return Transform.scale(
+      scale: scale,
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // ── Draw pile ──────────────────────────────────────────
-              GestureDetector(
-                onTap: isHumanTurn
-                    ? () {
-                        HapticFeedback.mediumImpact();
-                        ref.read(gameStateProvider.notifier).drawCard();
-                      }
-                    : null,
-                child: AnimatedOpacity(
-                  opacity: isHumanTurn ? 1.0 : 0.55,
-                  duration: const Duration(milliseconds: 300),
-                  child: _DrawPileCard(),
-                ),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            width: 54,
+            height: 54,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const LinearGradient(
+                colors: [Color(0xFF9E9E9E), Color(0xFF616161)],
               ),
-
-              const SizedBox(width: 36),
-
-              // ── Discard pile Top card ───────────────────────────────
-              if (topCard != null)
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(14),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _cardGlowColor(topCard).withOpacity(0.65),
-                            blurRadius: 24,
-                            spreadRadius: 6,
-                          ),
-                        ],
-                      ),
-                      child: _buildFancyCard(topCard, width: 90, height: 135,
-                          playable: false),
-                    )
-                        .animate()
-                        .scale(begin: const Offset(0.85, 0.85), duration: 300.ms, curve: Curves.easeOut)
-                        .fadeIn(duration: 200.ms),
-
-                    // Active stack badge indicator    
-                    if (gameState.hasActiveStack)
-                      Positioned(
-                        top: -12,
-                        right: -18,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFE53935), Color(0xFFC62828)],
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: const Color(0xFFFFD700), width: 2),
-                            boxShadow: [
-                              BoxShadow(color: Colors.red.withOpacity(0.7), blurRadius: 16)
-                            ],
-                          ),
-                          child: Text(
-                            '+${gameState.stackPenalty}',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                        ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(0.95, 0.95), end: const Offset(1.1, 1.1), duration: 500.ms),
-                      ),
-                  ],
-                ),
-            ],
+              border: Border.all(
+                color: isActive
+                    ? const Color(0xFFFFD700)
+                    : Colors.white.withOpacity(0.25),
+                width: isActive ? 3 : 1.5,
+              ),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFFFFD700).withOpacity(0.5),
+                        blurRadius: 16,
+                        spreadRadius: 2,
+                      )
+                    ]
+                  : [],
+            ),
+            child: isTop 
+              ? const UnoCardBack(isSmall: true, width: 34, height: 50)
+              : const Icon(Icons.person, color: Colors.white, size: 28),
           ),
-          const SizedBox(height: 30),
-          // ── UNO Buzzer & Pass Button ──────────────────────────
-          _buildActionButtons(gameState, humanHandCount, isHumanTurn),
+          const SizedBox(height: 4),
+          Text(name,
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  decoration: TextDecoration.none)),
+          Text('$cardCount cards',
+              style: TextStyle(
+                  color: Colors.white.withOpacity(0.55), fontSize: 10, decoration: TextDecoration.none)),
         ],
       ),
     );
   }
 
+  Widget _buildAiHand(int cardCount, Size size, {required Key key, double scale = 1.0, bool isVertical = false}) {
+    if (cardCount == 0) return SizedBox(key: key);
+    
+    // Calculate overlap to fit breadth width
+    final maxCardsInRow = 15;
+    final displayCount = math.min(cardCount, maxCardsInRow);
+    final cardW = 34.0 * scale;
+    final cardH = 50.0 * scale;
+    
+    final widthLimit = isVertical ? 100.0 : size.width * 0.4;
+    final spacing = math.min(cardW * 0.4, (widthLimit - cardW) / (displayCount - 1).clamp(1, displayCount));
+
+    return SizedBox(
+      key: key,
+      height: isVertical ? (displayCount * spacing + cardH) : (cardH + 10),
+      width: isVertical ? (cardW + 10) : (displayCount * spacing + cardW),
+      child: Stack(
+        alignment: Alignment.center,
+        children: List.generate(displayCount, (i) {
+          final totalLen = (displayCount - 1) * spacing;
+          
+          return Positioned(
+            left: isVertical ? 5 : (i * spacing),
+            top: isVertical ? (i * spacing) : 2,
+            child: UnoCardBack(
+              width: cardW,
+              height: cardH,
+              isSmall: true,
+              isRotated: !isVertical,
+            ).animate(delay: (i * 20).ms).fadeIn().slideY(begin: -0.1, end: 0),
+          );
+        }),
+      ),
+    );
+  }
+
+  // ── Center area: draw pile + discard pile ─────────────────────────────────
+  Widget _buildCenterArea(dynamic gameState, Size size, double scale) {
+    final isHumanTurn = gameState.currentPlayerId == 'player1';
+    final topCard = gameState.topCard as UnoCard?;
+    final humanHandCount = (gameState.playerHands['player1'] as List<UnoCard>? ?? []).length;
+
+    return Center(
+      child: Transform.scale(
+        scale: scale,
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // ── Draw pile ──────────────────────────────────────────
+                GestureDetector(
+                  onTap: isHumanTurn
+                      ? () {
+                          HapticFeedback.mediumImpact();
+                          _triggerDrawAnimation(playerId: 'player1');
+                          Future.delayed(const Duration(milliseconds: 300), () {
+                            ref.read(gameStateProvider.notifier).drawCard();
+                          });
+                        }
+                      : null,
+                  child: AnimatedOpacity(
+                    opacity: isHumanTurn ? 1.0 : 0.55,
+                    duration: const Duration(milliseconds: 300),
+                    child: _DrawPileCard(key: _drawPileKey),
+                  ),
+                ),
+  
+                const SizedBox(width: 36),
+  
+                // ── Discard pile Top card ───────────────────────────────
+                if (topCard != null)
+                  Stack(
+                    key: _discardPileKey,
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _cardGlowColor(topCard).withOpacity(0.65),
+                              blurRadius: 24,
+                              spreadRadius: 6,
+                            ),
+                          ],
+                        ),
+                        child: _buildFancyCard(topCard, width: 90, height: 135,
+                            playable: false),
+                      )
+                          .animate()
+                          .scale(begin: const Offset(0.85, 0.85), duration: 300.ms, curve: Curves.easeOut)
+                          .fadeIn(duration: 200.ms),
+  
+                      // ── DYNAMIC POWER INDICATOR ──
+                      if (_showPowerIndicator)
+                        Positioned(
+                          left: -30,
+                          right: -30,
+                          top: -30,
+                          bottom: -30,
+                          child: IgnorePointer(
+                            child: Center(
+                              child: Container(
+                                width: 120,
+                                height: 120,
+                                decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white.withOpacity(0.12),
+                                  border: Border.all(color: Colors.white24, width: 2),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: const Color(0xFFFFD700).withOpacity(0.3),
+                                      blurRadius: 30,
+                                      spreadRadius: 5,
+                                    ),
+                                  ],
+                                ),
+                                child: Center(
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        _powerSymbol,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 54,
+                                          fontWeight: FontWeight.w900,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                      Text(
+                                        _powerLabel,
+                                        style: const TextStyle(
+                                          color: Colors.white70,
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.bold,
+                                          letterSpacing: 1.5,
+                                          decoration: TextDecoration.none,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ).animate(key: ValueKey(_powerSymbol))
+                               .scale(begin: const Offset(0.5, 0.5), duration: 400.ms, curve: Curves.elasticOut)
+                               .fadeIn()
+                               .then()
+                               .shake()
+                               .then(delay: 800.ms)
+                               .scale(begin: const Offset(1, 1), end: const Offset(0, 0), duration: 300.ms)
+                               .fadeOut(),
+                            ),
+                          ),
+                        ),
+  
+                      // Active stack badge indicator    
+                      if (gameState.hasActiveStack)
+                        Positioned(
+                          top: -12,
+                          right: -18,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                              ),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFFFD700), width: 2),
+                              boxShadow: [
+                                BoxShadow(color: Colors.red.withOpacity(0.7), blurRadius: 16)
+                              ],
+                            ),
+                            child: Text(
+                              '+${gameState.stackPenalty}',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                                letterSpacing: 0.5,
+                                decoration: TextDecoration.none,
+                              ),
+                            ),
+                          ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(0.95, 0.95), end: const Offset(1.1, 1.1), duration: 500.ms),
+                        ),
+                    ],
+                  ),
+              ],
+            ),
+            const SizedBox(height: 30),
+            // ── UNO Buzzer & Pass Button ──────────────────────────
+            _buildActionButtons(gameState, humanHandCount, isHumanTurn),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildActionButtons(dynamic gameState, int handCount, bool isHumanTurn) {
-    final showPass = isHumanTurn && gameState.hasDrawnThisTurn && !gameState.hasActiveStack;
+    bool showPass = false;
+    
+    if (isHumanTurn && gameState.hasDrawnThisTurn && !gameState.hasActiveStack) {
+      final humanHand = List<UnoCard>.from(gameState.playerHands['player1'] ?? []);
+      if (humanHand.isNotEmpty && gameState.topCard != null) {
+        final lastDrawnCard = humanHand.last;
+        // Only show PASS if the drawn card is playable (as a choice)
+        showPass = RuleEngine.canPlayCard(
+          lastDrawnCard, 
+          gameState.topCard!,
+          declaredColor: gameState.declaredColor,
+          hasActiveStack: gameState.hasActiveStack,
+          stackCardType: gameState.stackCardType,
+          hand: humanHand,
+        );
+      }
+    }
     
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
         _buildUnoBuzzer(handCount, isHumanTurn),
-        if (showPass) ...[
-          const SizedBox(width: 20),
-          _buildPassButton(),
-        ],
+        const SizedBox(width: 20),
+        // Fix jumping: Always maintain space for Pass button
+        Visibility(
+          visible: showPass,
+          maintainSize: true,
+          maintainAnimation: true,
+          maintainState: true,
+          child: _buildPassButton(),
+        ),
       ],
     );
   }
@@ -353,6 +582,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
             color: Colors.white,
             fontWeight: FontWeight.bold,
             letterSpacing: 1.2,
+            decoration: TextDecoration.none,
           ),
         ),
       ),
@@ -407,6 +637,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                   fontWeight: FontWeight.w900,
                   fontSize: 16,
                   letterSpacing: 0.5,
+                  decoration: TextDecoration.none,
                 ),
               ),
             ),
@@ -417,63 +648,83 @@ class _GameScreenState extends ConsumerState<GameScreen>
   }
 
   // ── Player hand – fan layout ──────────────────────────────────────────────
-  Widget _buildPlayerHand(dynamic gameState, Size size) {
+  Widget _buildPlayerHand(dynamic gameState, Size size, double scale) {
     final humanHand =
         List<UnoCard>.from(gameState.playerHands['player1'] ?? []);
     final topCard = gameState.topCard as UnoCard?;
     final isHumanTurn = gameState.currentPlayerId == 'player1';
 
-    if (humanHand.isEmpty || topCard == null) return const SizedBox(height: 140);
-
     final cardCount = humanHand.length;
-    final maxAngle = math.min(0.04 * cardCount, 0.55); // fan spread radians
-    final cardWidth = 68.0;
-    final cardHeight = 105.0;
-    final overlap = math.min(0.55, 22.0 / cardWidth); // how much cards overlap
+    if (cardCount == 0 || topCard == null) return const SizedBox(height: 140);
 
+    final cardWidth = 68.0 * scale;
+    final cardHeight = 105.0 * scale;
+    final cardsPerRow = 10;
+    final numRows = (cardCount / cardsPerRow).ceil().clamp(1, 3);
+    final rowOverlapY = 40.0;
+    
     return SizedBox(
-      height: 155,
+      key: _playerHandKey,
+      height: cardHeight + (numRows - 1) * rowOverlapY + 20,
+      width: size.width,
       child: Stack(
-        alignment: Alignment.bottomCenter,
-        children: List.generate(cardCount, (i) {
-          final t = cardCount == 1 ? 0.5 : i / (cardCount - 1);
-          final angle = (t - 0.5) * 2 * maxAngle;
-          // vertical offset: cards further to edge dip down
-          final yOffset = (t - 0.5).abs() * (t - 0.5).abs() * 24;
-          // horizontal offset
-          final spacing = math.min(cardWidth * (1 - overlap), 40.0);
-          final totalW = spacing * (cardCount - 1);
-          final xCenter = (size.width / 2) - (totalW / 2) + i * spacing;
+        children: List.generate(numRows, (r) {
+          // Drawing in reverse order so Row 0 (front) is on top
+          final rowIndex = (numRows - 1) - r;
+          final startIdx = rowIndex * cardsPerRow;
+          final endIdx = math.min(startIdx + cardsPerRow, cardCount);
+          final rowCardsCount = endIdx - startIdx;
+          
+          if (rowCardsCount <= 0) return const SizedBox.shrink();
 
-          final card = humanHand[i];
-          final canPlay = isHumanTurn &&
-              RuleEngine.canPlayCard(
-                card, 
-                topCard,
-                declaredColor: gameState.declaredColor,
-                hasActiveStack: gameState.hasActiveStack,
-                stackCardType: gameState.stackCardType,
-                hand: humanHand,
-              );
+          // Calculate horizontal spacing for this row to fit screen
+          final availableWidth = size.width - 32;
+          final spacing = math.min(cardWidth * 0.45, (availableWidth - cardWidth) / (rowCardsCount - 1).clamp(1, rowCardsCount));
+          final rowTotalWidth = (rowCardsCount - 1) * spacing + cardWidth;
+          // r=0 is back-most, r=numRows-1 is front-most.
+          // Front-most (rowIndex 0, r=numRows-1) should have bottom: 0.
+          final rowBottomOffset = (numRows - 1 - r) * rowOverlapY; 
 
           return Positioned(
-            left: xCenter - cardWidth / 2,
-            bottom: 8 - yOffset,
-            child: Transform.rotate(
-              angle: angle,
-              child: _InteractiveFanCard(
-                card: card,
-                isPlayable: canPlay,
-                isHumanTurn: isHumanTurn,
-                width: cardWidth,
-                height: cardHeight,
-                onTap: canPlay ? () => _playCard(card) : null,
-              ),
-            ).animate(delay: (i * 40).ms).fadeIn(duration: 250.ms).slideY(
-                begin: 0.4,
-                end: 0,
-                duration: 350.ms,
-                curve: Curves.easeOutCubic),
+            bottom: rowBottomOffset,
+            left: 0,
+            right: 0,
+            height: cardHeight + 10,
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              children: List.generate(rowCardsCount, (i) {
+                final globalIdx = startIdx + i;
+                final card = humanHand[globalIdx];
+                final xOffset = (i * spacing) - (rowTotalWidth / 2) + (cardWidth / 2);
+                
+                final canPlay = isHumanTurn &&
+                    RuleEngine.canPlayCard(
+                      card, 
+                      topCard,
+                      declaredColor: gameState.declaredColor,
+                      hasActiveStack: gameState.hasActiveStack,
+                      stackCardType: gameState.stackCardType,
+                      hand: humanHand,
+                    );
+
+                return Positioned(
+                  left: size.width / 2 + xOffset - cardWidth / 2,
+                  bottom: 5,
+                  child: _InteractiveFanCard(
+                    card: card,
+                    isPlayable: canPlay,
+                    isHumanTurn: isHumanTurn,
+                    width: cardWidth,
+                    height: cardHeight,
+                    onTap: canPlay ? () => _playCard(card) : null,
+                  ).animate(delay: (globalIdx * 15).ms).fadeIn(duration: 200.ms).slideY(
+                      begin: 0.2,
+                      end: 0,
+                      duration: 250.ms,
+                      curve: Curves.easeOut),
+                );
+              }),
+            ),
           );
         }),
       ),
@@ -489,9 +740,19 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildVictoryOverlay(dynamic gameState) {
     final winnerId = gameState.winnerId as String?;
     final isPlayerWin = winnerId == 'player1';
-    final winnerName = isPlayerWin ? 'You' : 'AI Opponent';
+    final winnerName = isPlayerWin ? 'You' : (winnerId?.startsWith('ai') == true ? 'AI ${winnerId!.substring(2)}' : 'Opponent');
     final humanCards = (gameState.playerHands['player1'] as List<UnoCard>? ?? []).length;
-    final aiCards = (gameState.playerHands['ai1'] as List<UnoCard>? ?? []).length;
+    
+    final List<Map<String, String>> playerScores = [];
+    for (final id in gameState.playerIds) {
+      final pCards = (gameState.playerHands[id] as List<UnoCard>? ?? []).length;
+      final name = id == 'player1' ? 'You' : 'AI ${id.substring(2)}';
+      playerScores.add({
+        'name': name,
+        'cards': pCards.toString(),
+        'pts': (pCards * 10).toString(),
+      });
+    }
 
     return Container(
       color: Colors.black.withOpacity(0.75),
@@ -581,10 +842,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
                 child: Column(
                   children: [
                     _scoreRow('Players', 'Cards', 'Pts', isHeader: true),
-                    _scoreRow('You', humanCards.toString(),
-                        (humanCards * 4).toString()),
-                    _scoreRow('AI Opponent', aiCards.toString(),
-                        (aiCards * 4).toString()),
+                    ...playerScores.map((s) => _scoreRow(s['name']!, s['cards']!, s['pts']!)),
                   ],
                 ),
               ),
@@ -592,10 +850,12 @@ class _GameScreenState extends ConsumerState<GameScreen>
               // Play Again
               GestureDetector(
                 onTap: () {
-                  final players = [
+                  final List<Player> players = [
                     Player.human(id: 'player1', name: 'You'),
-                    Player.ai(id: 'ai1', name: 'AI Opponent'),
                   ];
+                  for (int i = 1; i <= widget.aiCount; i++) {
+                    players.add(Player.ai(id: 'ai$i', name: 'AI $i'));
+                  }
                   ref.read(gameStateProvider.notifier).initializeGame(players);
                 },
                 child: Container(
@@ -688,8 +948,134 @@ class _GameScreenState extends ConsumerState<GameScreen>
       _showColorPicker(card);
     } else {
       HapticFeedback.mediumImpact();
-      ref.read(gameStateProvider.notifier).playCard(card);
+      _triggerPlayAnimation(card, playerId: 'player1');
+      // Wait for animation before state update
+      Future.delayed(const Duration(milliseconds: 300), () {
+        ref.read(gameStateProvider.notifier).playCard(card);
+      });
     }
+  }
+
+  String _getSymbolText(UnoCardValue value) {
+    switch (value) {
+      case UnoCardValue.skip:
+        return '⊘';
+      case UnoCardValue.reverse:
+        return '⇄';
+      case UnoCardValue.drawTwo:
+        return '+2';
+      case UnoCardValue.wild:
+        return '✦';
+      case UnoCardValue.wildDrawFour:
+        return '+4';
+      default:
+        return '';
+    }
+  }
+
+  String _getLabelText(UnoCardValue value, bool isClockwise) {
+    switch (value) {
+      case UnoCardValue.skip:
+        return 'BLOCKED';
+      case UnoCardValue.reverse:
+        return isClockwise ? 'NORMAL' : 'REVERSED';
+      case UnoCardValue.drawTwo:
+        return 'PICK +2';
+      case UnoCardValue.wild:
+        return 'CHOOSE COLOR';
+      case UnoCardValue.wildDrawFour:
+        return 'PICK +4';
+      default:
+        return '';
+    }
+  }
+
+  void _triggerPlayAnimation(UnoCard? card, {required String playerId}) {
+    final isAI = playerId.startsWith('ai');
+    final startKey = isAI ? _aiHandKeys[playerId]! : _playerHandKey;
+    final start = _getCenterOf(startKey);
+    final end = _getCenterOf(_discardPileKey);
+    
+    // Play card/special sound
+    AudioService.instance.playCardSound(card);
+    _addFlyingCard(card, start, end, isBack: isAI);
+  }
+
+  void _triggerDrawAnimation({required String playerId}) {
+    final isAI = playerId.startsWith('ai');
+    final start = _getCenterOf(_drawPileKey);
+    final endKey = isAI ? _aiHandKeys[playerId]! : _playerHandKey;
+    final end = _getCenterOf(endKey);
+    
+    // Play draw sound
+    AudioService.instance.playDrawSound();
+    _addFlyingCard(null, start, end, isBack: true);
+  }
+
+  Offset _getCenterOf(GlobalKey key) {
+    final RenderBox? box = key.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null) return Offset.zero;
+    final pos = box.localToGlobal(Offset.zero);
+    return Offset(pos.dx + box.size.width / 2, pos.dy + box.size.height / 2);
+  }
+
+  void _addFlyingCard(UnoCard? card, Offset start, Offset end, {bool isBack = false}) {
+    final id = DateTime.now().millisecondsSinceEpoch.toString();
+    setState(() {
+      _flyingCards.add(_FlyingCardData(
+        id: id,
+        card: card,
+        start: start,
+        end: end,
+        isBack: isBack,
+      ));
+    });
+
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) {
+        setState(() {
+          _flyingCards.removeWhere((c) => c.id == id);
+        });
+      }
+    });
+  }
+
+  Widget _buildFlyingCard(_FlyingCardData data) {
+    const cardW = 68.0;
+    const cardH = 105.0;
+    
+    return Positioned(
+      left: 0,
+      top: 0,
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: const Duration(milliseconds: 400),
+        curve: Curves.easeOutCubic,
+        builder: (context, value, child) {
+          final x = data.start.dx + (data.end.dx - data.start.dx) * value;
+          final y = data.start.dy + (data.end.dy - data.start.dy) * value;
+          final scale = 1.0 + math.sin(value * math.pi) * 0.2;
+          final rotation = value * math.pi * 0.1;
+
+          return Transform.translate(
+            offset: Offset(x - cardW / 2, y - cardH / 2),
+            child: Transform.scale(
+              scale: scale,
+              child: Transform.rotate(
+                angle: rotation,
+                child: Opacity(
+                  opacity: value < 0.1 ? value * 10 : (value > 0.9 ? (1 - value) * 10 : 1.0),
+                  child: child,
+                ),
+              ),
+            ),
+          );
+        },
+        child: data.isBack || data.card == null
+            ? const UnoCardBack(width: cardW, height: cardH)
+            : _buildFancyCard(data.card!, width: cardW, height: cardH, playable: false),
+      ),
+    );
   }
 
   void _showColorPicker(UnoCard card) {
@@ -772,7 +1158,26 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
 // ────────────────────────────────────────────────────────────────────────────
 /// Draw pile card (face-down stack with stacked shadow illusion)
+
+class _FlyingCardData {
+  final String id;
+  final UnoCard? card;
+  final Offset start;
+  final Offset end;
+  final bool isBack;
+
+  _FlyingCardData({
+    required this.id,
+    this.card,
+    required this.start,
+    required this.end,
+    this.isBack = false,
+  });
+}
+
 class _DrawPileCard extends StatelessWidget {
+  const _DrawPileCard({super.key});
+
   @override
   Widget build(BuildContext context) {
     return SizedBox(
