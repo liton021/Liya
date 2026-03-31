@@ -83,25 +83,18 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildTopBar(dynamic gameState, Size size) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          _iconCircleButton(Icons.settings, () {}),
-          // Direction indicator
-          AnimatedBuilder(
-            animation: _unoGlowCtrl,
-            builder: (_, __) => Icon(
-              gameState.isClockwise
-                  ? Icons.rotate_right
-                  : Icons.rotate_left,
-              color:
-                  Colors.white.withOpacity(0.4 + _unoGlowCtrl.value * 0.3),
-              size: 22,
-            ),
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _unoGlowCtrl,
+          builder: (_, __) => Icon(
+            gameState.isClockwise
+                ? Icons.rotate_right
+                : Icons.rotate_left,
+            color:
+                Colors.white.withOpacity(0.4 + _unoGlowCtrl.value * 0.3),
+            size: 26,
           ),
-          _iconCircleButton(Icons.monetization_on_rounded, () {},
-              color: const Color(0xFFFFD700)),
-        ],
+        ),
       ),
     );
   }
@@ -236,85 +229,191 @@ class _GameScreenState extends ConsumerState<GameScreen>
   Widget _buildCenterArea(dynamic gameState, Size size) {
     final isHumanTurn = gameState.currentPlayerId == 'player1';
     final topCard = gameState.topCard as UnoCard?;
+    final humanHandCount = (gameState.playerHands['player1'] as List<UnoCard>? ?? []).length;
 
     return Center(
-      child: Row(
+      child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // ── Draw pile ──────────────────────────────────────────
-          GestureDetector(
-            onTap: isHumanTurn
-                ? () {
-                    HapticFeedback.mediumImpact();
-                    ref.read(gameStateProvider.notifier).drawCard();
-                  }
-                : null,
-            child: AnimatedOpacity(
-              opacity: isHumanTurn ? 1.0 : 0.55,
-              duration: const Duration(milliseconds: 300),
-              child: _DrawPileCard(),
-            ),
-          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // ── Draw pile ──────────────────────────────────────────
+              GestureDetector(
+                onTap: isHumanTurn
+                    ? () {
+                        HapticFeedback.mediumImpact();
+                        ref.read(gameStateProvider.notifier).drawCard();
+                      }
+                    : null,
+                child: AnimatedOpacity(
+                  opacity: isHumanTurn ? 1.0 : 0.55,
+                  duration: const Duration(milliseconds: 300),
+                  child: _DrawPileCard(),
+                ),
+              ),
 
-          const SizedBox(width: 36),
+              const SizedBox(width: 36),
 
-          // ── Discard pile Top card ───────────────────────────────
-          if (topCard != null)
-            Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _cardGlowColor(topCard).withOpacity(0.65),
-                        blurRadius: 24,
-                        spreadRadius: 6,
-                      ),
-                    ],
-                  ),
-                  child: _buildFancyCard(topCard, width: 90, height: 135,
-                      playable: false),
-                )
-                    .animate()
-                    .scale(begin: const Offset(0.85, 0.85), duration: 300.ms, curve: Curves.easeOut)
-                    .fadeIn(duration: 200.ms),
-
-                // Active stack badge indicator    
-                if (gameState.hasActiveStack)
-                  Positioned(
-                    top: -12,
-                    right: -18,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              // ── Discard pile Top card ───────────────────────────────
+              if (topCard != null)
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
                       decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [Color(0xFFE53935), Color(0xFFC62828)],
-                        ),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFFFFD700), width: 2),
+                        borderRadius: BorderRadius.circular(14),
                         boxShadow: [
-                          BoxShadow(color: Colors.red.withOpacity(0.7), blurRadius: 16)
+                          BoxShadow(
+                            color: _cardGlowColor(topCard).withOpacity(0.65),
+                            blurRadius: 24,
+                            spreadRadius: 6,
+                          ),
                         ],
                       ),
-                      child: Text(
-                        '+${gameState.stackPenalty}',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 16,
-                          letterSpacing: 0.5,
-                        ),
+                      child: _buildFancyCard(topCard, width: 90, height: 135,
+                          playable: false),
+                    )
+                        .animate()
+                        .scale(begin: const Offset(0.85, 0.85), duration: 300.ms, curve: Curves.easeOut)
+                        .fadeIn(duration: 200.ms),
+
+                    // Active stack badge indicator    
+                    if (gameState.hasActiveStack)
+                      Positioned(
+                        top: -12,
+                        right: -18,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFE53935), Color(0xFFC62828)],
+                            ),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(color: const Color(0xFFFFD700), width: 2),
+                            boxShadow: [
+                              BoxShadow(color: Colors.red.withOpacity(0.7), blurRadius: 16)
+                            ],
+                          ),
+                          child: Text(
+                            '+${gameState.stackPenalty}',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 16,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(0.95, 0.95), end: const Offset(1.1, 1.1), duration: 500.ms),
                       ),
-                    ).animate(onPlay: (c) => c.repeat(reverse: true)).scale(begin: const Offset(0.95, 0.95), end: const Offset(1.1, 1.1), duration: 500.ms),
-                  ),
-              ],
-            ),
+                  ],
+                ),
+            ],
+          ),
+          const SizedBox(height: 30),
+          // ── UNO Buzzer & Pass Button ──────────────────────────
+          _buildActionButtons(gameState, humanHandCount, isHumanTurn),
         ],
       ),
     );
+  }
+
+  Widget _buildActionButtons(dynamic gameState, int handCount, bool isHumanTurn) {
+    final showPass = isHumanTurn && gameState.hasDrawnThisTurn && !gameState.hasActiveStack;
+    
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildUnoBuzzer(handCount, isHumanTurn),
+        if (showPass) ...[
+          const SizedBox(width: 20),
+          _buildPassButton(),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildPassButton() {
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.lightImpact();
+        ref.read(gameStateProvider.notifier).passTurn();
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+        decoration: BoxDecoration(
+          color: Colors.black45,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white24),
+        ),
+        child: const Text(
+          'PASS',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+            letterSpacing: 1.2,
+          ),
+        ),
+      ),
+    ).animate().fadeIn().scale();
+  }
+
+  Widget _buildUnoBuzzer(int handCount, bool isHumanTurn) {
+    final unoDeclared = (ref.read(gameStateProvider).unoDeclaredPlayers).contains('player1');
+    final canDeclare = handCount == 1 && isHumanTurn && !unoDeclared;
+    
+    return GestureDetector(
+      onTap: canDeclare
+          ? () {
+              HapticFeedback.heavyImpact();
+              ref.read(gameStateProvider.notifier).declareUno('player1');
+            }
+          : null,
+      child: AnimatedBuilder(
+        animation: _unoGlowCtrl,
+        builder: (_, __) {
+          final glowFactor = canDeclare ? _unoGlowCtrl.value : 0.0;
+          return Container(
+            width: 70,
+            height: 70,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: canDeclare 
+                  ? [const Color(0xFFFFD700), const Color(0xFFD4A017), const Color(0xFFB8860B)]
+                  : [Colors.grey[800]!, Colors.grey[900]!],
+              ),
+              border: Border.all(
+                color: canDeclare ? Colors.white : Colors.white12,
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: (canDeclare ? const Color(0xFFFFD700) : Colors.black)
+                      .withOpacity(0.3 + glowFactor * 0.4),
+                  blurRadius: 10 + glowFactor * 15,
+                  spreadRadius: 1 + glowFactor * 3,
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                'UNO',
+                style: TextStyle(
+                  color: canDeclare ? Colors.black87 : Colors.white24,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 16,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    ).animate(target: canDeclare ? 1 : 0).scale(begin: const Offset(0.9, 0.9), end: const Offset(1.0, 1.0));
   }
 
   // ── Player hand – fan layout ──────────────────────────────────────────────
@@ -383,60 +482,7 @@ class _GameScreenState extends ConsumerState<GameScreen>
 
   // ── Bottom: your avatar + UNO button ─────────────────────────────────────
   Widget _buildBottomBar(dynamic gameState, Size size) {
-    final isHumanTurn = gameState.currentPlayerId == 'player1';
-    final humanHand =
-        List<UnoCard>.from(gameState.playerHands['player1'] ?? []);
-
-    return Padding(
-      padding: const EdgeInsets.only(left: 20, right: 20, bottom: 12, top: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          _iconCircleButton(Icons.settings_outlined, () {}),
-          // UNO button
-          GestureDetector(
-            onTap: humanHand.length == 1 && isHumanTurn
-                ? () {
-                    HapticFeedback.heavyImpact();
-                    setState(() => _unoDeclared = true);
-                  }
-                : null,
-            child: AnimatedBuilder(
-              animation: _unoGlowCtrl,
-              builder: (_, __) => Container(
-                width: 80,
-                height: 42,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFD4A017), Color(0xFFFFD700), Color(0xFFB8860B)],
-                  ),
-                  borderRadius: BorderRadius.circular(21),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFFFFD700).withOpacity(
-                          0.35 + _unoGlowCtrl.value * 0.35),
-                      blurRadius: 14 + _unoGlowCtrl.value * 8,
-                      spreadRadius: 1,
-                    ),
-                  ],
-                ),
-                child: const Center(
-                  child: Text('UNO!',
-                      style: TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 18,
-                          letterSpacing: 1)),
-                ),
-              ),
-            ),
-          ),
-          _iconCircleButton(Icons.monetization_on_rounded, () {},
-              color: const Color(0xFFFFD700)),
-        ],
-      ),
-    );
+    return const SizedBox(height: 20);
   }
 
   // ── Victory overlay ───────────────────────────────────────────────────────

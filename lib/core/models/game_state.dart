@@ -26,6 +26,12 @@ class GameState {
   /// Whether stacking (+2 on +2, +4 on +4) is enabled.
   final bool stackingEnabled;
 
+  /// Whether the current player has already drawn a card this turn.
+  final bool hasDrawnThisTurn;
+
+  /// Set of players who have declared UNO.
+  final Set<String> unoDeclaredPlayers;
+
   const GameState({
     required this.drawPile,
     required this.discardPile,
@@ -40,6 +46,8 @@ class GameState {
     this.stackPenalty = 0,
     this.stackCardType,
     this.stackingEnabled = true, // ON by default (Bangladesh preference)
+    this.hasDrawnThisTurn = false,
+    this.unoDeclaredPlayers = const {},
   });
 
   factory GameState.initial() {
@@ -84,6 +92,8 @@ class GameState {
     UnoCardValue? stackCardType,
     bool clearStackCardType = false,
     bool? stackingEnabled,
+    bool? hasDrawnThisTurn,
+    Set<String>? unoDeclaredPlayers,
   }) {
     return GameState(
       drawPile: drawPile ?? this.drawPile,
@@ -102,6 +112,8 @@ class GameState {
           ? null
           : (stackCardType ?? this.stackCardType),
       stackingEnabled: stackingEnabled ?? this.stackingEnabled,
+      hasDrawnThisTurn: hasDrawnThisTurn ?? this.hasDrawnThisTurn,
+      unoDeclaredPlayers: unoDeclaredPlayers ?? this.unoDeclaredPlayers,
     );
   }
 }

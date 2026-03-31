@@ -65,7 +65,6 @@ class _MenuScreenState extends State<MenuScreen>
           SafeArea(
             child: Column(
               children: [
-                _buildTopBar(),
                 const Spacer(),
                 _buildLogo(),
                 const Spacer(),
@@ -77,52 +76,6 @@ class _MenuScreenState extends State<MenuScreen>
         ],
       ),
     );
-  }
-
-  Widget _buildTopBar() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          // Coins
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.black38,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: const Color(0xFFB8860B).withOpacity(0.5)),
-            ),
-            child: const Row(
-              children: [
-                Icon(Icons.monetization_on_rounded,
-                    color: Color(0xFFFFD700), size: 18),
-                SizedBox(width: 6),
-                Text('50',
-                    style: TextStyle(
-                        color: Color(0xFFFFD700),
-                        fontWeight: FontWeight.bold,
-                        fontSize: 15)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Avatar
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: [Color(0xFF8B6914), Color(0xFF5C4300)],
-              ),
-              border: Border.all(color: const Color(0xFFB8860B), width: 2),
-            ),
-            child: const Icon(Icons.person, color: Colors.white70, size: 24),
-          ),
-        ],
-      ),
-    ).animate().fadeIn(duration: 500.ms);
   }
 
   Widget _buildLogo() {
@@ -203,9 +156,7 @@ class _MenuScreenState extends State<MenuScreen>
   Widget _buildButtons() {
     final buttons = [
       ('SINGLE PLAYER', Icons.person, () => _startSinglePlayer(context), false),
-      ('MULTIPLAYER LOBBY', Icons.people, () {}, true),
-      ('PLAY WITH FRIENDS', Icons.group_add, () {}, true),
-      ('SHOP', Icons.storefront, () {}, true),
+      ('MULTIPLAYER (COMING SOON)', Icons.people, () {}, true),
     ];
     return Column(
       children: buttons.asMap().entries.map((entry) {

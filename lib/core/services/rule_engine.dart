@@ -100,7 +100,7 @@ class RuleEngine {
   /// 
   /// Returns the number of cards to draw as penalty
   static int getUnoPenalty() {
-    return 2;
+    return 1;
   }
 
   /// Checks if a player has any playable cards

@@ -79,6 +79,7 @@ class GameStateNotifier extends StateNotifier<GameState> {
       playerIds: playerIds,
       currentPlayerIndex: 0,
       status: GameStatus.playing,
+      hasDrawnThisTurn: false,
     );
 
     // If first player is AI, trigger AI move
@@ -112,7 +113,27 @@ class GameStateNotifier extends StateNotifier<GameState> {
     // Add card to discard pile
     final updatedDiscard = List<UnoCard>.from(state.discardPile)..add(card);
 
-    // Check for win
+    // Check for win-without-UNO penalty
+    final bool hasNotDeclared = !state.unoDeclaredPlayers.contains(state.currentPlayerId);
+    if (currentHand.isEmpty && hasNotDeclared) {
+      // Penalty: Draw 1 card and move turn
+      // Instead of updating hands with empty list, we'll draw for them now
+      _drawSingleCard(); 
+      // Re-get the hand because _drawSingleCard updated it
+      final handAfterPenalty = state.playerHands[state.currentPlayerId] ?? [];
+      
+      // Update state to include the played card but with the new penalty card in hand
+      state = state.copyWith(
+        discardPile: updatedDiscard,
+      );
+
+      // Move turn and end logic here
+      state = _moveToNextPlayer(state);
+      _checkAndTriggerAIMove();
+      return;
+    }
+
+    // Check for standard win
     if (currentHand.isEmpty) {
       state = state.copyWith(
         playerHands: updatedHands,
@@ -123,31 +144,68 @@ class GameStateNotifier extends StateNotifier<GameState> {
       return;
     }
 
+    // Handle draw cards (Stacking)
+    int newStackPenalty = state.stackPenalty;
+    UnoCardValue? newStackCardType = state.stackCardType;
+
+    final drawCount = RuleEngine.getDrawCount(card);
+    if (drawCount > 0) {
+      newStackPenalty += drawCount;
+      newStackCardType = card.value;
+    }
+
     // Apply card effects
     var newState = state.copyWith(
       playerHands: updatedHands,
       discardPile: updatedDiscard,
       declaredColor: declaredColor,
       clearDeclaredColor: !card.isWildCard,
+      stackPenalty: newStackPenalty,
+      stackCardType: newStackCardType,
     );
 
     // Handle reverse
-    if (RuleEngine.shouldReverseTurn(card)) {
+    bool isReverse = RuleEngine.shouldReverseTurn(card);
+    if (isReverse) {
       newState = newState.copyWith(isClockwise: !newState.isClockwise);
     }
 
-    // Handle draw cards
-    final drawCount = RuleEngine.getDrawCount(card);
-    if (drawCount > 0) {
-      newState = newState.copyWith(drawStackCount: drawCount);
-    }
-
     // Move to next player
-    state = _moveToNextPlayer(newState, skipNext: RuleEngine.shouldSkipTurn(card));
+    final nextState = _moveToNextPlayer(newState, 
+        skipNext: RuleEngine.shouldSkipTurn(card),
+        isReverse: isReverse,
+    );
+    state = nextState;
+
+    // Trigger AI move if it's AI's turn
+    _checkAndTriggerAIMove();
   }
 
   /// Draws a card for the current player
   void drawCard() {
+    if (state.hasActiveStack) {
+      drawCards(state.stackPenalty);
+    } else if (!state.hasDrawnThisTurn) {
+      _drawSingleCard();
+      state = state.copyWith(hasDrawnThisTurn: true);
+    }
+  }
+
+  /// Draws multiple cards (for penalties)
+  void drawCards(int count) {
+    for (int i = 0; i < count; i++) {
+      _drawSingleCard();
+    }
+    // Clear stack penalty and move to next player
+    state = _moveToNextPlayer(state.copyWith(
+      stackPenalty: 0,
+      clearStackCardType: true,
+    ));
+    _checkAndTriggerAIMove();
+  }
+
+  /// Internal helper for drawing a single card without moving turn
+  void _drawSingleCard() {
     if (state.drawPile.isEmpty) {
       _reshuffleDiscardPile();
     }
@@ -165,36 +223,39 @@ class GameStateNotifier extends StateNotifier<GameState> {
       drawPile: updatedDrawPile,
       playerHands: updatedHands,
     );
-  }
 
-  /// Draws multiple cards (for penalties)
-  void drawCards(int count) {
-    for (int i = 0; i < count; i++) {
-      drawCard();
+    // Clear UNO declaration if hand size is now > 1
+    if (currentHand.length > 1 && state.unoDeclaredPlayers.contains(state.currentPlayerId)) {
+      final updatedUno = Set<String>.from(state.unoDeclaredPlayers)..remove(state.currentPlayerId);
+      state = state.copyWith(unoDeclaredPlayers: updatedUno);
     }
-    state = _moveToNextPlayer(state);
   }
 
   /// Moves to the next player
-  GameState _moveToNextPlayer(GameState currentState, {bool skipNext = false}) {
+  GameState _moveToNextPlayer(GameState currentState, {bool skipNext = false, bool isReverse = false}) {
     int nextIndex = currentState.currentPlayerIndex;
     final playerCount = currentState.playerIds.length;
 
-    if (currentState.isClockwise) {
-      nextIndex = (nextIndex + 1) % playerCount;
-      if (skipNext) {
+    // In 2-player games, Skip and Reverse both grant an extra turn to the current player
+    bool shouldStayOnCurrent = (playerCount == 2 && (skipNext || isReverse));
+
+    if (!shouldStayOnCurrent) {
+      if (currentState.isClockwise) {
         nextIndex = (nextIndex + 1) % playerCount;
-      }
-    } else {
-      nextIndex = (nextIndex - 1 + playerCount) % playerCount;
-      if (skipNext) {
+        if (skipNext) {
+          nextIndex = (nextIndex + 1) % playerCount;
+        }
+      } else {
         nextIndex = (nextIndex - 1 + playerCount) % playerCount;
+        if (skipNext) {
+          nextIndex = (nextIndex - 1 + playerCount) % playerCount;
+        }
       }
     }
 
     return currentState.copyWith(
       currentPlayerIndex: nextIndex,
-      drawStackCount: 0,
+      hasDrawnThisTurn: false,
     );
   }
 
@@ -216,6 +277,15 @@ class GameStateNotifier extends StateNotifier<GameState> {
   /// Passes turn to next player
   void passTurn() {
     state = _moveToNextPlayer(state);
+    _checkAndTriggerAIMove();
+  }
+
+  /// Declares UNO for a player
+  void declareUno(String playerId) {
+    if (state.unoDeclaredPlayers.contains(playerId)) return;
+    
+    final updatedUno = Set<String>.from(state.unoDeclaredPlayers)..add(playerId);
+    state = state.copyWith(unoDeclaredPlayers: updatedUno);
   }
 
   /// Checks if current player is AI and triggers their move
@@ -242,6 +312,8 @@ class GameStateNotifier extends StateNotifier<GameState> {
       currentHand,
       state.topCard!,
       declaredColor: state.declaredColor,
+      hasActiveStack: state.hasActiveStack,
+      stackCardType: state.stackCardType,
     );
 
     if (cardToPlay != null) {
@@ -250,9 +322,21 @@ class GameStateNotifier extends StateNotifier<GameState> {
       if (cardToPlay.isWildCard) {
         declaredColor = aiPlayer.selectColorForWildCard(currentHand);
       }
+      
+      // AI logic for declaring UNO
+      if (currentHand.length == 2) {
+        declareUno(state.currentPlayerId);
+      }
+
       playCard(cardToPlay, declaredColor: declaredColor);
     } else {
-      // AI must draw a card
+      // AI must draw
+      if (state.hasActiveStack) {
+        // Cannot stack, must take the penalty
+        drawCards(state.stackPenalty);
+        return;
+      }
+      
       drawCard();
       
       // After drawing, check if AI can play the drawn card
@@ -268,6 +352,9 @@ class GameStateNotifier extends StateNotifier<GameState> {
               drawnCard,
               state.topCard!,
               declaredColor: state.declaredColor,
+              hasActiveStack: state.hasActiveStack,
+              stackCardType: state.stackCardType,
+              hand: updatedHand,
             )) {
           // AI can play the drawn card
           await Future.delayed(const Duration(milliseconds: 300));
