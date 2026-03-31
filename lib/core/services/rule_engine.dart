@@ -10,13 +10,44 @@ class RuleEngine {
   /// [cardToPlay] The card the player wants to play
   /// [topCard] The current card on top of the discard pile
   /// [declaredColor] The color declared for wild cards (if applicable)
+  /// [hasActiveStack] Whether there is an active +2 or +4 stack
+  /// [stackCardType] The type of card generating the stack (+2 or +4)
+  /// [hand] The player's hand (used to check +4 legality)
   /// 
   /// Returns true if the move is valid
   static bool canPlayCard(
     UnoCard cardToPlay,
     UnoCard topCard, {
     UnoCardColor? declaredColor,
+    bool hasActiveStack = false,
+    UnoCardValue? stackCardType,
+    List<UnoCard>? hand,
   }) {
+    // 1. Handle Active Stacks
+    if (hasActiveStack && stackCardType != null) {
+      if (stackCardType == UnoCardValue.drawTwo) {
+        // Can stack +2 on +2, or +4 on +2
+        return cardToPlay.value == UnoCardValue.drawTwo || 
+               cardToPlay.value == UnoCardValue.wildDrawFour;
+      } else if (stackCardType == UnoCardValue.wildDrawFour) {
+        // Can only stack +4 on +4
+        return cardToPlay.value == UnoCardValue.wildDrawFour;
+      }
+      return false;
+    }
+
+    // 2. Enforce official +4 Wild rule (can only play if no matching color in hand)
+    if (cardToPlay.value == UnoCardValue.wildDrawFour && hand != null) {
+      final colorToMatch = topCard.isWildCard ? declaredColor : topCard.color;
+      if (colorToMatch != null && colorToMatch != UnoCardColor.wild) {
+        final hasMatchingColor = hand.any((c) => c != cardToPlay && c.color == colorToMatch);
+        if (hasMatchingColor) {
+          return false;
+        }
+      }
+    }
+
+    // 3. Normal Play
     // Wild cards can always be played
     if (cardToPlay.isWildCard) return true;
 
@@ -81,8 +112,16 @@ class RuleEngine {
     List<UnoCard> hand,
     UnoCard topCard, {
     UnoCardColor? declaredColor,
+    bool hasActiveStack = false,
+    UnoCardValue? stackCardType,
   }) {
-    return hand.any((card) => canPlayCard(card, topCard, declaredColor: declaredColor));
+    return hand.any((card) => canPlayCard(
+      card, topCard, 
+      declaredColor: declaredColor, 
+      hasActiveStack: hasActiveStack, 
+      stackCardType: stackCardType,
+      hand: hand,
+    ));
   }
 
   /// Gets all playable cards from a hand
@@ -90,9 +129,17 @@ class RuleEngine {
     List<UnoCard> hand,
     UnoCard topCard, {
     UnoCardColor? declaredColor,
+    bool hasActiveStack = false,
+    UnoCardValue? stackCardType,
   }) {
     return hand
-        .where((card) => canPlayCard(card, topCard, declaredColor: declaredColor))
+        .where((card) => canPlayCard(
+          card, topCard, 
+          declaredColor: declaredColor,
+          hasActiveStack: hasActiveStack,
+          stackCardType: stackCardType,
+          hand: hand,
+        ))
         .toList();
   }
 

@@ -1,10 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math' as math;
 
-/// Premium game table widget with realistic texture
-/// 
-/// Creates a dark matte or wooden texture background
-/// for the game playing surface
+/// Premium dark-green felt game table  matching the reference design
 class GameTable extends StatelessWidget {
   final Widget child;
   final TableStyle style;
@@ -12,255 +9,120 @@ class GameTable extends StatelessWidget {
   const GameTable({
     super.key,
     required this.child,
-    this.style = TableStyle.darkMatte,
+    this.style = TableStyle.greenFelt,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      decoration: BoxDecoration(
-        gradient: _getTableGradient(),
+      decoration: const BoxDecoration(
+        gradient: RadialGradient(
+          center: Alignment(0, 0.1),
+          radius: 1.0,
+          colors: [
+            Color(0xFF1E5622), // bright felt center
+            Color(0xFF153B18), // mid felt
+            Color(0xFF0C2610), // dark edges
+          ],
+        ),
       ),
       child: CustomPaint(
-        painter: TableTexturePainter(style: style),
+        painter: _FeltTablePainter(),
         child: child,
       ),
     );
   }
+}
 
-  LinearGradient _getTableGradient() {
-    switch (style) {
-      case TableStyle.darkMatte:
-        return LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF1A1A2E),
-            const Color(0xFF16213E),
-            const Color(0xFF0F3460),
-          ],
-        );
-      case TableStyle.woodTexture:
-        return LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF3E2723),
-            const Color(0xFF4E342E),
-            const Color(0xFF5D4037),
-          ],
-        );
-      case TableStyle.greenFelt:
-        return LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFF1B5E20),
-            const Color(0xFF2E7D32),
-            const Color(0xFF388E3C),
-          ],
-        );
+enum TableStyle { darkMatte, woodTexture, greenFelt }
+
+// ────────────────────────────────────────────────────────────────────────────
+class _FeltTablePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rng = math.Random(13);
+
+    // Felt fiber texture
+    final fiberPaint = Paint()
+      ..strokeWidth = 0.6
+      ..style = PaintingStyle.stroke;
+
+    for (int i = 0; i < 900; i++) {
+      final x = rng.nextDouble() * size.width;
+      final y = rng.nextDouble() * size.height;
+      final angle = rng.nextDouble() * math.pi * 2;
+      final len = 2.0 + rng.nextDouble() * 4;
+      fiberPaint.color =
+          Colors.black.withOpacity(0.04 + rng.nextDouble() * 0.04);
+      canvas.drawLine(
+        Offset(x, y),
+        Offset(x + math.cos(angle) * len, y + math.sin(angle) * len),
+        fiberPaint,
+      );
     }
+
+    // Decorative oval border ring (like a real card table)
+    final ovalPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.5
+      ..color = const Color(0xFF1A4D1F).withOpacity(0.7);
+
+    final ovalRect = Rect.fromCenter(
+      center: Offset(size.width / 2, size.height * 0.42),
+      width: size.width * 0.78,
+      height: size.height * 0.42,
+    );
+    canvas.drawOval(ovalRect, ovalPaint);
+
+    // Inner oval – lighter highlight
+    final innerOvalPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = Colors.white.withOpacity(0.06);
+    canvas.drawOval(
+      ovalRect.deflate(8),
+      innerOvalPaint,
+    );
+
+    // Subtle vignette
+    final vigPaint = Paint()
+      ..shader = RadialGradient(
+        center: Alignment.center,
+        radius: 0.9,
+        colors: [
+          Colors.transparent,
+          Colors.black.withOpacity(0.45),
+        ],
+        stops: const [0.45, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(
+        Rect.fromLTWH(0, 0, size.width, size.height), vigPaint);
   }
+
+  @override
+  bool shouldRepaint(_FeltTablePainter old) => false;
 }
 
-/// Enum for different table styles
-enum TableStyle {
-  darkMatte,
-  woodTexture,
-  greenFelt,
-}
-
-/// Custom painter for table texture effects
+// Keep legacy aliases so other widgets still compile
 class TableTexturePainter extends CustomPainter {
   final TableStyle style;
-
-  TableTexturePainter({required this.style});
-
+  const TableTexturePainter({required this.style});
   @override
-  void paint(Canvas canvas, Size size) {
-    switch (style) {
-      case TableStyle.darkMatte:
-        _paintMatteTexture(canvas, size);
-        break;
-      case TableStyle.woodTexture:
-        _paintWoodTexture(canvas, size);
-        break;
-      case TableStyle.greenFelt:
-        _paintFeltTexture(canvas, size);
-        break;
-    }
-
-    // Add subtle vignette effect
-    _paintVignette(canvas, size);
-  }
-
-  void _paintMatteTexture(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withOpacity(0.02)
-      ..style = PaintingStyle.fill;
-
-    final random = math.Random(42); // Fixed seed for consistency
-
-    // Add noise texture
-    for (int i = 0; i < 500; i++) {
-      final x = random.nextDouble() * size.width;
-      final y = random.nextDouble() * size.height;
-      final radius = random.nextDouble() * 2;
-
-      canvas.drawCircle(Offset(x, y), radius, paint);
-    }
-  }
-
-  void _paintWoodTexture(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    // Draw wood grain lines
-    for (int i = 0; i < 30; i++) {
-      final y = (size.height / 30) * i;
-      final path = Path();
-      path.moveTo(0, y);
-
-      // Create wavy line for wood grain
-      for (double x = 0; x < size.width; x += 10) {
-        final offset = math.sin(x * 0.05 + i) * 3;
-        path.lineTo(x, y + offset);
-      }
-
-      paint.color = Colors.black.withOpacity(0.1);
-      canvas.drawPath(path, paint);
-    }
-
-    // Add wood knots
-    final random = math.Random(42);
-    for (int i = 0; i < 5; i++) {
-      final x = random.nextDouble() * size.width;
-      final y = random.nextDouble() * size.height;
-      _drawWoodKnot(canvas, Offset(x, y));
-    }
-  }
-
-  void _drawWoodKnot(Canvas canvas, Offset center) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    for (int i = 0; i < 5; i++) {
-      final radius = 10.0 + i * 5;
-      paint.color = Colors.black.withOpacity(0.15 - i * 0.02);
-      canvas.drawCircle(center, radius, paint);
-    }
-  }
-
-  void _paintFeltTexture(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.black.withOpacity(0.05)
-      ..style = PaintingStyle.fill;
-
-    final random = math.Random(42);
-
-    // Add felt fiber texture
-    for (int i = 0; i < 1000; i++) {
-      final x = random.nextDouble() * size.width;
-      final y = random.nextDouble() * size.height;
-      final length = random.nextDouble() * 3 + 1;
-      final angle = random.nextDouble() * math.pi * 2;
-
-      final path = Path();
-      path.moveTo(x, y);
-      path.lineTo(
-        x + math.cos(angle) * length,
-        y + math.sin(angle) * length,
-      );
-
-      canvas.drawPath(path, paint..strokeWidth = 0.5);
-    }
-  }
-
-  void _paintVignette(Canvas canvas, Size size) {
-    final rect = Rect.fromLTWH(0, 0, size.width, size.height);
-    final gradient = RadialGradient(
-      center: Alignment.center,
-      radius: 1.0,
-      colors: [
-        Colors.transparent,
-        Colors.black.withOpacity(0.3),
-      ],
-      stops: const [0.5, 1.0],
-    );
-
-    final paint = Paint()..shader = gradient.createShader(rect);
-    canvas.drawRect(rect, paint);
-  }
-
+  void paint(Canvas canvas, Size size) {}
   @override
-  bool shouldRepaint(TableTexturePainter oldDelegate) {
-    return oldDelegate.style != style;
-  }
+  bool shouldRepaint(TableTexturePainter old) => false;
 }
 
-/// Decorative table edge widget
 class TableEdge extends StatelessWidget {
   final double height;
-
-  const TableEdge({
-    super.key,
-    this.height = 40,
-  });
-
+  const TableEdge({super.key, this.height = 40});
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            const Color(0xFF2C2C54).withOpacity(0.8),
-            const Color(0xFF1A1A2E).withOpacity(0.9),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.5),
-            blurRadius: 10,
-            offset: const Offset(0, -5),
-          ),
-        ],
-      ),
-      child: CustomPaint(
-        painter: EdgeDetailPainter(),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SizedBox(height: height);
 }
 
-/// Painter for decorative edge details
 class EdgeDetailPainter extends CustomPainter {
   @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withOpacity(0.1)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    // Draw decorative lines
-    canvas.drawLine(
-      Offset(0, size.height * 0.3),
-      Offset(size.width, size.height * 0.3),
-      paint,
-    );
-
-    canvas.drawLine(
-      Offset(0, size.height * 0.7),
-      Offset(size.width, size.height * 0.7),
-      paint,
-    );
-  }
-
+  void paint(Canvas canvas, Size size) {}
   @override
-  bool shouldRepaint(EdgeDetailPainter oldDelegate) => false;
+  bool shouldRepaint(EdgeDetailPainter old) => false;
 }

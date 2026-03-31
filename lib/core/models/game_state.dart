@@ -1,8 +1,6 @@
 import '../models/card_model.dart';
 
 /// Represents the current state of the UNO game
-/// 
-/// This immutable class holds all game state information
 class GameState {
   final List<UnoCard> drawPile;
   final List<UnoCard> discardPile;
@@ -15,6 +13,19 @@ class GameState {
   final String? winnerId;
   final int drawStackCount;
 
+  // ── Stacking support ───────────────────────────────────────────────────────
+  /// Cumulative penalty cards from stacked +2 / +4 cards.
+  /// 0 means no active stack.
+  final int stackPenalty;
+
+  /// The type of card currently being stacked (drawTwo or wildDrawFour).
+  /// null when no stack is active.
+  final UnoCardValue? stackCardType;
+
+  // ── Settings ───────────────────────────────────────────────────────────────
+  /// Whether stacking (+2 on +2, +4 on +4) is enabled.
+  final bool stackingEnabled;
+
   const GameState({
     required this.drawPile,
     required this.discardPile,
@@ -26,9 +37,11 @@ class GameState {
     this.status = GameStatus.waiting,
     this.winnerId,
     this.drawStackCount = 0,
+    this.stackPenalty = 0,
+    this.stackCardType,
+    this.stackingEnabled = true, // ON by default (Bangladesh preference)
   });
 
-  /// Creates initial game state
   factory GameState.initial() {
     return const GameState(
       drawPile: [],
@@ -48,6 +61,12 @@ class GameState {
   /// Gets the current player's hand
   List<UnoCard> get currentPlayerHand => playerHands[currentPlayerId] ?? [];
 
+  /// Whether there is an active draw stack that must be resolved
+  bool get hasActiveStack => stackPenalty > 0;
+
+  /// Number of players
+  int get playerCount => playerIds.length;
+
   /// Creates a copy with modified fields
   GameState copyWith({
     List<UnoCard>? drawPile,
@@ -61,6 +80,10 @@ class GameState {
     GameStatus? status,
     String? winnerId,
     int? drawStackCount,
+    int? stackPenalty,
+    UnoCardValue? stackCardType,
+    bool clearStackCardType = false,
+    bool? stackingEnabled,
   }) {
     return GameState(
       drawPile: drawPile ?? this.drawPile,
@@ -69,10 +92,16 @@ class GameState {
       playerIds: playerIds ?? this.playerIds,
       currentPlayerIndex: currentPlayerIndex ?? this.currentPlayerIndex,
       isClockwise: isClockwise ?? this.isClockwise,
-      declaredColor: clearDeclaredColor ? null : (declaredColor ?? this.declaredColor),
+      declaredColor:
+          clearDeclaredColor ? null : (declaredColor ?? this.declaredColor),
       status: status ?? this.status,
       winnerId: winnerId ?? this.winnerId,
       drawStackCount: drawStackCount ?? this.drawStackCount,
+      stackPenalty: stackPenalty ?? this.stackPenalty,
+      stackCardType: clearStackCardType
+          ? null
+          : (stackCardType ?? this.stackCardType),
+      stackingEnabled: stackingEnabled ?? this.stackingEnabled,
     );
   }
 }

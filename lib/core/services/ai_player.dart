@@ -27,11 +27,15 @@ class AIPlayer {
     List<UnoCard> hand,
     UnoCard topCard, {
     UnoCardColor? declaredColor,
+    bool hasActiveStack = false,
+    UnoCardValue? stackCardType,
   }) {
     final playableCards = RuleEngine.getPlayableCards(
       hand,
       topCard,
       declaredColor: declaredColor,
+      hasActiveStack: hasActiveStack,
+      stackCardType: stackCardType,
     );
 
     if (playableCards.isEmpty) return null;

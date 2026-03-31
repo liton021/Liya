@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../../core/models/card_model.dart';
+import 'dart:math' as math;
 
-/// Premium UNO card widget with glassmorphism effect
-/// 
-/// Features:
-/// - Custom painted card design
-/// - Soft shadows and inner glow
-/// - Haptic feedback on interaction
-/// - Smooth animations
+/// Premium UNO card widget matching reference design:
+/// - Solid color background
+/// - White oval/ellipse in center tilted 45°
+/// - Big number/symbol in center
+/// - Small corner indicators
+/// - Gold glow border when playable
 class UnoCardWidget extends StatelessWidget {
   final UnoCard card;
   final bool isPlayable;
@@ -41,204 +41,226 @@ class UnoCardWidget extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.3),
+              color: Colors.black.withOpacity(0.45),
               blurRadius: 8,
               offset: const Offset(0, 4),
             ),
             BoxShadow(
-              color: _getCardColor().withOpacity(0.2),
-              blurRadius: 12,
-              offset: const Offset(0, 0),
+              color: _cardColor().withOpacity(0.3),
+              blurRadius: 10,
             ),
           ],
         ),
-        child: CustomPaint(
-          painter: UnoCardPainter(
-            card: card,
-            isPlayable: isPlayable,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: CustomPaint(
+            painter: _UnoCardPainter(card: card, isPlayable: isPlayable),
           ),
         ),
       ),
     );
   }
 
-  Color _getCardColor() {
+  Color _cardColor() {
     switch (card.color) {
       case UnoCardColor.red:
-        return const Color(0xFFE53935);
+        return const Color(0xFFD32F2F);
       case UnoCardColor.blue:
-        return const Color(0xFF1E88E5);
+        return const Color(0xFF1565C0);
       case UnoCardColor.green:
-        return const Color(0xFF43A047);
+        return const Color(0xFF2E7D32);
       case UnoCardColor.yellow:
-        return const Color(0xFFFDD835);
+        return const Color(0xFFF9A825);
       case UnoCardColor.wild:
-        return Colors.black;
+        return Colors.black87;
     }
   }
 }
 
-/// Custom painter for drawing premium UNO cards
-class UnoCardPainter extends CustomPainter {
+// ────────────────────────────────────────────────────────────────────────────
+class _UnoCardPainter extends CustomPainter {
   final UnoCard card;
   final bool isPlayable;
 
-  UnoCardPainter({
-    required this.card,
-    required this.isPlayable,
-  });
+  _UnoCardPainter({required this.card, required this.isPlayable});
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Rect.fromLTWH(0, 0, size.width, size.height);
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(12));
 
-    // Draw card background
-    _drawBackground(canvas, rrect);
+    // 1. Background
+    _paintBackground(canvas, rrect, size);
 
-    // Draw inner shadow
-    _drawInnerShadow(canvas, rrect);
+    // 2. White tilted oval
+    _paintOval(canvas, size);
 
-    // Draw card content
-    _drawCardContent(canvas, size);
+    // 3. Center symbol
+    _paintCenterSymbol(canvas, size);
 
-    // Draw border
-    _drawBorder(canvas, rrect);
+    // 4. Corner labels
+    _paintCornerLabel(canvas, size, topLeft: true);
+    _paintCornerLabel(canvas, size, topLeft: false);
 
-    // Apply disabled overlay if not playable
+    // 5. Greyed-out overlay if not playable
     if (!isPlayable) {
-      _drawDisabledOverlay(canvas, rrect);
+      final paint = Paint()
+        ..color = Colors.black.withOpacity(0.42)
+        ..style = PaintingStyle.fill;
+      canvas.drawRRect(rrect, paint);
     }
   }
 
-  void _drawBackground(Canvas canvas, RRect rrect) {
-    final paint = Paint()
-      ..color = _getBackgroundColor()
+  void _paintBackground(Canvas canvas, RRect rrect, Size size) {
+    // Main background color
+    final bgPaint = Paint()
+      ..color = _bgColor()
       ..style = PaintingStyle.fill;
+    canvas.drawRRect(rrect, bgPaint);
 
-    canvas.drawRRect(rrect, paint);
-  }
+    // Subtle inner gradient highlight (top lighter)
+    final gradPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          Colors.white.withOpacity(0.18),
+          Colors.transparent,
+          Colors.black.withOpacity(0.15),
+        ],
+        stops: const [0.0, 0.5, 1.0],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRRect(rrect, gradPaint);
 
-  void _drawInnerShadow(Canvas canvas, RRect rrect) {
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.1)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4);
-
+    // White border
+    final borderPaint = Paint()
+      ..color = Colors.white.withOpacity(0.85)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
-        rrect.outerRect.deflate(2),
-        const Radius.circular(10),
+        rrect.outerRect.deflate(1.5),
+        const Radius.circular(11),
       ),
-      shadowPaint,
+      borderPaint,
     );
   }
 
-  void _drawCardContent(Canvas canvas, Size size) {
-    final textPainter = TextPainter(
+  void _paintOval(Canvas canvas, Size size) {
+    // A tilted white oval/ellipse in the background
+    canvas.save();
+    canvas.translate(size.width / 2, size.height / 2);
+    canvas.rotate(math.pi / 6); // 30°
+
+    final ovalPaint = Paint()
+      ..color = Colors.white.withOpacity(0.22)
+      ..style = PaintingStyle.fill;
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset.zero,
+          width: size.width * 0.7,
+          height: size.height * 0.55),
+      ovalPaint,
+    );
+
+    // Solid white inner oval (where the symbol sits)
+    final innerPaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset.zero,
+          width: size.width * 0.55,
+          height: size.height * 0.42),
+      innerPaint,
+    );
+    canvas.restore();
+  }
+
+  void _paintCenterSymbol(Canvas canvas, Size size) {
+    final text = _symbolText();
+    final color = _symbolColor(); // against the white oval background
+
+    final tp = TextPainter(
       text: TextSpan(
-        text: _getCardText(),
+        text: text,
         style: TextStyle(
-          color: _getTextColor(),
-          fontSize: 32,
-          fontWeight: FontWeight.bold,
-          shadows: [
-            Shadow(
-              color: Colors.black.withOpacity(0.3),
-              offset: const Offset(0, 2),
-              blurRadius: 4,
-            ),
-          ],
+          color: color,
+          fontSize: size.width * 0.38,
+          fontWeight: FontWeight.w900,
+          height: 1,
         ),
       ),
       textDirection: TextDirection.ltr,
-    );
+    )..layout();
 
-    textPainter.layout();
-    textPainter.paint(
+    tp.paint(
       canvas,
       Offset(
-        (size.width - textPainter.width) / 2,
-        (size.height - textPainter.height) / 2,
+        (size.width - tp.width) / 2,
+        (size.height - tp.height) / 2,
       ),
     );
-
-    // Draw small corner indicators
-    _drawCornerIndicator(canvas, size, Alignment.topLeft);
-    _drawCornerIndicator(canvas, size, Alignment.bottomRight);
   }
 
-  void _drawCornerIndicator(Canvas canvas, Size size, Alignment alignment) {
-    final textPainter = TextPainter(
+  void _paintCornerLabel(Canvas canvas, Size size, {required bool topLeft}) {
+    final text = _symbolText();
+
+    final tp = TextPainter(
       text: TextSpan(
-        text: _getCardText(),
-        style: TextStyle(
-          color: _getTextColor(),
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
+        text: text,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
         ),
       ),
       textDirection: TextDirection.ltr,
-    );
+    )..layout();
 
-    textPainter.layout();
-
-    Offset position;
-    if (alignment == Alignment.topLeft) {
-      position = const Offset(8, 8);
+    if (topLeft) {
+      tp.paint(canvas, const Offset(7, 5));
     } else {
       canvas.save();
-      canvas.translate(size.width - 8, size.height - 8);
-      canvas.rotate(3.14159); // 180 degrees
-      position = const Offset(0, 0);
-    }
-
-    textPainter.paint(canvas, position);
-    
-    if (alignment == Alignment.bottomRight) {
+      canvas.translate(size.width - 7, size.height - 5);
+      canvas.rotate(math.pi);
+      tp.paint(canvas, Offset.zero);
       canvas.restore();
     }
   }
 
-  void _drawBorder(Canvas canvas, RRect rrect) {
-    final borderPaint = Paint()
-      ..color = Colors.white.withOpacity(0.3)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2;
-
-    canvas.drawRRect(rrect, borderPaint);
-  }
-
-  void _drawDisabledOverlay(Canvas canvas, RRect rrect) {
-    final overlayPaint = Paint()
-      ..color = Colors.black.withOpacity(0.5)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawRRect(rrect, overlayPaint);
-  }
-
-  Color _getBackgroundColor() {
+  // ── Helpers ──────────────────────────────────────────────────────────────
+  Color _bgColor() {
     switch (card.color) {
       case UnoCardColor.red:
-        return const Color(0xFFE53935);
+        return const Color(0xFFD32F2F);
       case UnoCardColor.blue:
-        return const Color(0xFF1E88E5);
+        return const Color(0xFF1565C0);
       case UnoCardColor.green:
-        return const Color(0xFF43A047);
+        return const Color(0xFF2E7D32);
       case UnoCardColor.yellow:
-        return const Color(0xFFFDD835);
+        return const Color(0xFFF9A825);
       case UnoCardColor.wild:
-        return const Color(0xFF212121);
+        return const Color(0xFF1A1A1A);
     }
   }
 
-  Color _getTextColor() {
-    if (card.color == UnoCardColor.yellow) {
-      return Colors.black87;
+  Color _symbolColor() {
+    switch (card.color) {
+      case UnoCardColor.red:
+        return const Color(0xFFD32F2F);
+      case UnoCardColor.blue:
+        return const Color(0xFF1565C0);
+      case UnoCardColor.green:
+        return const Color(0xFF2E7D32);
+      case UnoCardColor.yellow:
+        return const Color(0xFFF9A825);
+      case UnoCardColor.wild:
+        return Colors.black87;
     }
-    return Colors.white;
   }
 
-  String _getCardText() {
+  String _symbolText() {
     switch (card.value) {
       case UnoCardValue.zero:
         return '0';
@@ -267,14 +289,13 @@ class UnoCardPainter extends CustomPainter {
       case UnoCardValue.drawTwo:
         return '+2';
       case UnoCardValue.wild:
-        return '◆';
+        return '✦';
       case UnoCardValue.wildDrawFour:
         return '+4';
     }
   }
 
   @override
-  bool shouldRepaint(UnoCardPainter oldDelegate) {
-    return oldDelegate.card != card || oldDelegate.isPlayable != isPlayable;
-  }
+  bool shouldRepaint(_UnoCardPainter old) =>
+      old.card != card || old.isPlayable != isPlayable;
 }
