@@ -210,11 +210,14 @@ class _GameScreenState extends ConsumerState<GameScreen> {
   }
 
   /// Handles playing a card
-  void _playCard(UnoCard card) {
+  void _playCard(UnoCard card) async {
     if (card.isWildCard) {
       _showColorPicker(card);
     } else {
       ref.read(gameStateProvider.notifier).playCard(card);
+      // Trigger AI move after human plays
+      await Future.delayed(const Duration(milliseconds: 100));
+      ref.read(gameStateProvider.notifier).checkAITurn();
     }
   }
 
@@ -264,9 +267,12 @@ class _GameScreenState extends ConsumerState<GameScreen> {
     }
 
     return GestureDetector(
-      onTap: () {
+      onTap: () async {
         Navigator.of(context).pop();
         ref.read(gameStateProvider.notifier).playCard(card, declaredColor: color);
+        // Trigger AI move after human plays wild card
+        await Future.delayed(const Duration(milliseconds: 100));
+        ref.read(gameStateProvider.notifier).checkAITurn();
       },
       child: Container(
         width: 50,

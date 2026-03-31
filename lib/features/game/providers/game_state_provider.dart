@@ -82,7 +82,9 @@ class GameStateNotifier extends StateNotifier<GameState> {
     );
 
     // If first player is AI, trigger AI move
-    _checkAndTriggerAIMove();
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _checkAndTriggerAIMove();
+    });
   }
 
   /// Plays a card from the current player's hand
@@ -142,9 +144,6 @@ class GameStateNotifier extends StateNotifier<GameState> {
 
     // Move to next player
     state = _moveToNextPlayer(newState, skipNext: RuleEngine.shouldSkipTurn(card));
-    
-    // Check if next player is AI
-    _checkAndTriggerAIMove();
   }
 
   /// Draws a card for the current player
@@ -166,9 +165,6 @@ class GameStateNotifier extends StateNotifier<GameState> {
       drawPile: updatedDrawPile,
       playerHands: updatedHands,
     );
-    
-    // Check if current player is AI after drawing
-    _checkAndTriggerAIMove();
   }
 
   /// Draws multiple cards (for penalties)
@@ -177,7 +173,6 @@ class GameStateNotifier extends StateNotifier<GameState> {
       drawCard();
     }
     state = _moveToNextPlayer(state);
-    _checkAndTriggerAIMove();
   }
 
   /// Moves to the next player
@@ -221,11 +216,10 @@ class GameStateNotifier extends StateNotifier<GameState> {
   /// Passes turn to next player
   void passTurn() {
     state = _moveToNextPlayer(state);
-    _checkAndTriggerAIMove();
   }
 
   /// Checks if current player is AI and triggers their move
-  void _checkAndTriggerAIMove() async {
+  Future<void> _checkAndTriggerAIMove() async {
     if (state.status != GameStatus.playing) return;
     
     final currentPlayer = _players[state.currentPlayerId];
@@ -293,4 +287,9 @@ class GameStateNotifier extends StateNotifier<GameState> {
 
   /// Gets player by ID
   Player? getPlayer(String playerId) => _players[playerId];
+
+  /// Public method to check and trigger AI turn
+  Future<void> checkAITurn() async {
+    await _checkAndTriggerAIMove();
+  }
 }
